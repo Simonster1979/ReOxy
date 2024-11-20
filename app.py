@@ -163,6 +163,71 @@ def extract_text_from_pdf(pdf_file):
         st.write("Full error:", str(e))
         return [], {}
 
+def summarize_report(patient_data):
+    try:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        prompt = f"""
+        Summarize this ReOxy treatment data:
+        Patient: {patient_data['patient_name']}
+        Treatment Date: {patient_data['treatment_date']}
+        Key Metrics:
+        - Total Duration: {patient_data['total_duration']}
+        - Total Hypoxic Time: {patient_data['total_hypoxic_time']}
+        - Min SpO2 Average: {patient_data['min_spo2_average']}
+        - Max SpO2 Average: {patient_data['max_spo2_average']}
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error generating summary: {str(e)}"
+
+def compare_sessions(sorted_results):
+    try:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        sessions_data = []
+        for treatment_num, data in sorted_results.items():
+            sessions_data.append(f"""
+            Session {treatment_num}:
+            - Duration: {data['total_duration']}
+            - Hypoxic Time: {data['total_hypoxic_time']}
+            - Min SpO2: {data['min_spo2_average']}
+            - Max SpO2: {data['max_spo2_average']}
+            """)
+        
+        prompt = f"Compare these ReOxy treatment sessions and highlight key differences:\n{''.join(sessions_data)}"
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error comparing sessions: {str(e)}"
+
+def generate_recommendations(patient_data):
+    try:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        prompt = f"""
+        Based on this ReOxy treatment data:
+        - Min SpO2: {patient_data['min_spo2_average']}
+        - Max SpO2: {patient_data['max_spo2_average']}
+        - PR Elevation: {patient_data['pr_elevation_percent']}%
+        
+        Provide recommendations for future treatments.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error generating recommendations: {str(e)}"
+
 def main():
     st.set_page_config(layout="wide")
     st.title("ReOxy Reports Interpreter")
@@ -211,70 +276,101 @@ def main():
             except Exception as e:
                 st.error(f"Error processing {uploaded_file.name}: {str(e)}")
         
-        # Display Patient Information for the first patient only
-        if first_patient:
-            st.subheader("Patient Information")
-            st.write(f"**Patient Name:** {first_patient['patient_name']}")
-            st.write(f"**Date of Birth:** {first_patient['date_of_birth']}")
-            st.write(f"**Sex:** {first_patient['sex']}")
-
         # Sort results by treatment number
         sorted_results = OrderedDict(sorted(all_results.items()))
 
-        # Display the rest of the extracted results
-        st.subheader("Extracted Results")
+        # After processing files and before displaying the table
+        if sorted_results:
+            # Display Patient Information first
+            st.subheader("Patient Information")
+            first_patient = next(iter(sorted_results.values()))
+            st.write(f"**Patient Name:** {first_patient['patient_name']}")
+            st.write(f"**Date of Birth:** {first_patient['date_of_birth']}")
+            st.write(f"**Sex:** {first_patient['sex']}")
+            
+            # Add a separator
+            st.markdown("---")
+            
+            # Create three columns for the different analyses
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.subheader("Session Summary")
+                # Get the latest session data
+                latest_session = sorted_results[max(sorted_results.keys())]
+                summary = summarize_report(latest_session)
+                st.write(summary)
+            
+            with col2:
+                st.subheader("Session Comparison")
+                if len(sorted_results) > 1:
+                    comparison = compare_sessions(sorted_results)
+                    st.write(comparison)
+                else:
+                    st.write("Upload multiple sessions to see comparison")
+            
+            with col3:
+                st.subheader("Treatment Recommendations")
+                recommendations = generate_recommendations(latest_session)
+                st.write(recommendations)
+            
+            # Add a separator before the table
+            st.markdown("---")
+            
+            # Continue with your existing table display code
+            st.subheader("Extracted Results")
 
-        # Create a table header
-        cols = st.columns(len(sorted_results) + 1)  # +1 for labels column
+            # Create a table header
+            cols = st.columns(len(sorted_results) + 1)  # +1 for labels column
 
-        # Labels column
-        ## cols[0].write("Field")
-        for i, (treatment_num, data) in enumerate(sorted_results.items(), 1):
-            cols[i].write(f"Session {treatment_num}")
+            # Labels column
+            ## cols[0].write("Field")
+            for i, (treatment_num, data) in enumerate(sorted_results.items(), 1):
+                cols[i].write(f"Session {treatment_num}")
 
-        # Data rows
-        fields = [
-          ##  ('patient_name', 'Patient Name'),
-          ##  ('reference_number', 'Reference Number'),
-          ##  ('sex', 'Sex'),
-          ##  ('date_of_birth', 'Date of Birth'),
-            ('treatment_date', 'Treatment Date'),
-            ('total_duration', 'Total Duration'),
-            ('total_hypoxic_time', 'Total Hypoxic Time'),
-            ('adjustment_time', 'Adjustment Time'),
-            ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
-            ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
-            ('min_spo2_average', 'Min SpO2 Average'),
-            ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
-            ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
-            ('max_spo2_average', 'Max SpO2 Average'),
-            ('baseline_pr', 'Baseline PR'),
-            ('min_pr_average', 'Min PR Average'),
-            ('max_pr_average', 'Max PR Average'),
-            ('pr_after_procedure', 'PR After Procedure'),
-            ('pr_elevation_bpm', 'PR Elevation (BPM)'),
-            ('pr_elevation_percent', 'PR Elevation (%)')
-        ]
+            # Data rows
+            fields = [
+              ##  ('patient_name', 'Patient Name'),
+              ##  ('reference_number', 'Reference Number'),
+              ##  ('sex', 'Sex'),
+              ##  ('date_of_birth', 'Date of Birth'),
+                ('treatment_date', 'Treatment Date'),
+                ('total_duration', 'Total Duration'),
+                ('total_hypoxic_time', 'Total Hypoxic Time'),
+                ('adjustment_time', 'Adjustment Time'),
+                ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
+                ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
+                ('min_spo2_average', 'Min SpO2 Average'),
+                ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
+                ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
+                ('max_spo2_average', 'Max SpO2 Average'),
+                ('baseline_pr', 'Baseline PR'),
+                ('min_pr_average', 'Min PR Average'),
+                ('max_pr_average', 'Max PR Average'),
+                ('pr_after_procedure', 'PR After Procedure'),
+                ('pr_elevation_bpm', 'PR Elevation (BPM)'),
+                ('pr_elevation_percent', 'PR Elevation (%)')
+            ]
 
-        # Create rows
-        for field_key, field_label in fields:
-            cols = st.columns(len(sorted_results) + 1)
-            cols[0].write(field_label)
-            for i, data in enumerate(sorted_results.values(), 1):
-                cols[i].write(data[field_key])
+            # Create rows
+            for field_key, field_label in fields:
+                cols = st.columns(len(sorted_results) + 1)
+                cols[0].write(field_label)
+                for i, data in enumerate(sorted_results.values(), 1):
+                    cols[i].write(data[field_key])
 
-        # Add download button for CSV
-        # Convert to DataFrame
-        df = pd.DataFrame.from_dict(sorted_results, orient='index')
-        
-        # Create CSV
-        csv = df.to_csv(index=True)
-        st.download_button(
-            label="Download as CSV",
-            data=csv,
-            file_name="treatment_results.csv",
-            mime="text/csv"
-        )
+            # Add download button for CSV
+            # Convert to DataFrame
+            df = pd.DataFrame.from_dict(sorted_results, orient='index')
+            
+            # Create CSV
+            csv = df.to_csv(index=True)
+            st.download_button(
+                label="Download as CSV",
+                data=csv,
+                file_name="treatment_results.csv",
+                mime="text/csv"
+            )
 
 if __name__ == "__main__":
     main() 
