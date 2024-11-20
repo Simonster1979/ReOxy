@@ -1,5 +1,7 @@
 streamlit
 pdfplumber
 pandas
+openai
 python-dotenv
-openai 
+plotly
+anthropic 
