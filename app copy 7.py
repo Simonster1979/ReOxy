@@ -1,3 +1,4 @@
+# first fully working version
 import streamlit as st
 import pdfplumber
 import io
@@ -8,11 +9,30 @@ import os
 from dotenv import load_dotenv
 import plotly.graph_objects as go
 import plotly.express as px
-from anthropic import Anthropic
-import anthropic
 
 # Load environment variables
 load_dotenv()
+
+def test_openai():
+    try:
+        api_key = os.getenv("OPENAI_API_KEY")
+        org_id = os.getenv("OPENAI_ORG_ID")
+        
+        client = OpenAI(
+            api_key=api_key,
+            organization=org_id
+        )
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": "Hello!"}]
+        )
+        st.success("OpenAI is configured correctly!")
+        return True
+    except Exception as e:
+        st.error(f"OpenAI configuration error: {str(e)}")
+        st.write("Full error:", str(e))
+        return False
 
 def extract_text_from_pdf(pdf_file):
     try:
@@ -168,30 +188,7 @@ def summarize_report(patient_data):
     except Exception as e:
         return f"Error generating summary: {str(e)}"
 
-def summarize_report_claude(patient_data):
-    try:
-        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        prompt = f"""
-        Summarize this ReOxy treatment data:
-        Patient: {patient_data['patient_name']}
-        Treatment Date: {patient_data['treatment_date']}
-        Key Metrics:
-        - Total Duration: {patient_data['total_duration']}
-        - Total Hypoxic Time: {patient_data['total_hypoxic_time']}
-        - Min SpO2 Average: {patient_data['min_spo2_average']}
-        - Max SpO2 Average: {patient_data['max_spo2_average']}
-        """
-        
-        response = client.messages.create(
-            model="claude-3-sonnet-20240229",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.content[0].text
-    except Exception as e:
-        return f"Error generating summary: {str(e)}"
-
-def compare_sessions_openai(sorted_results):
+def compare_sessions(sorted_results):
     try:
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         sessions_data = []
@@ -211,38 +208,6 @@ def compare_sessions_openai(sorted_results):
             messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content
-    except Exception as e:
-        return f"Error comparing sessions: {str(e)}"
-
-def compare_sessions_claude(sorted_results):
-    try:
-        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        sessions_data = []
-        for treatment_num, data in sorted_results.items():
-            sessions_data.append(f"""
-            Session {treatment_num}:
-            - Duration: {data['total_duration']}
-            - Hypoxic Time: {data['total_hypoxic_time']}
-            - Min SpO2: {data['min_spo2_average']}
-            - Max SpO2: {data['max_spo2_average']}
-            - PR Elevation: {data['pr_elevation_percent']}%
-            - Baseline PR: {data['baseline_pr']}
-            - PR After: {data['pr_after_procedure']}
-            """)
-        
-        prompt = f"""Compare these ReOxy treatment sessions and provide:
-        1. Key differences between sessions
-        2. Any trends or patterns in the data
-        3. Notable improvements or areas of concern
-        
-        Sessions:{''.join(sessions_data)}"""
-        
-        response = client.messages.create(
-            model="claude-3-sonnet-20240229",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.content[0].text
     except Exception as e:
         return f"Error comparing sessions: {str(e)}"
 
@@ -298,11 +263,9 @@ def main():
     st.set_page_config(layout="wide")
     st.title("ReOxy Reports Interpreter")
     
-    # Changed order to make Claude the default
-    ai_model = st.sidebar.selectbox(
-        "Select AI Model",
-        ["Claude 3 Sonnet", "OpenAI GPT-3.5"]
-    )
+    # Add OpenAI test button at the top
+  #  if st.button("Test OpenAI Connection"):
+      #  test_openai()
     
     # Initialize session state for uploaded files
     if 'uploaded_files' not in st.session_state:
@@ -364,14 +327,15 @@ def main():
             
             with col1:
                 st.subheader("Session Summary")
+                # Get the latest session data
                 latest_session = sorted_results[max(sorted_results.keys())]
-                summary = summarize_report_claude(latest_session) if ai_model == "Claude 3 Sonnet" else summarize_report(latest_session)
+                summary = summarize_report(latest_session)
                 st.write(summary)
             
             with col2:
                 st.subheader("Session Comparison")
                 if len(sorted_results) > 1:
-                    comparison = compare_sessions_claude(sorted_results) if ai_model == "Claude 3 Sonnet" else compare_sessions_openai(sorted_results)
+                    comparison = compare_sessions(sorted_results)
                     st.write(comparison)
                 else:
                     st.write("Upload multiple sessions to see comparison")
