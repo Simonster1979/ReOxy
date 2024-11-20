@@ -1,35 +1,12 @@
+## before integrating openai
+
 import streamlit as st
 import pdfplumber
 import io
 from collections import OrderedDict
 import pandas as pd
-from openai import OpenAI
+import openai
 import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
-def test_openai():
-    try:
-        api_key = os.getenv("OPENAI_API_KEY")
-        org_id = os.getenv("OPENAI_ORG_ID")
-        
-        client = OpenAI(
-            api_key=api_key,
-            organization=org_id
-        )
-        
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": "Hello!"}]
-        )
-        st.success("OpenAI is configured correctly!")
-        return True
-    except Exception as e:
-        st.error(f"OpenAI configuration error: {str(e)}")
-        st.write("Full error:", str(e))
-        return False
 
 def extract_text_from_pdf(pdf_file):
     try:
@@ -167,10 +144,6 @@ def main():
     st.set_page_config(layout="wide")
     st.title("ReOxy Reports Interpreter")
     
-    # Add OpenAI test button at the top
-    if st.button("Test OpenAI Connection"):
-        test_openai()
-    
     # Initialize session state for uploaded files
     if 'uploaded_files' not in st.session_state:
         st.session_state.uploaded_files = []
@@ -277,4 +250,5 @@ def main():
         )
 
 if __name__ == "__main__":
+    openai.api_key = os.getenv("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")
     main() 

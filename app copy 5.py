@@ -3,33 +3,6 @@ import pdfplumber
 import io
 from collections import OrderedDict
 import pandas as pd
-from openai import OpenAI
-import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
-def test_openai():
-    try:
-        api_key = os.getenv("OPENAI_API_KEY")
-        org_id = os.getenv("OPENAI_ORG_ID")
-        
-        client = OpenAI(
-            api_key=api_key,
-            organization=org_id
-        )
-        
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": "Hello!"}]
-        )
-        st.success("OpenAI is configured correctly!")
-        return True
-    except Exception as e:
-        st.error(f"OpenAI configuration error: {str(e)}")
-        st.write("Full error:", str(e))
-        return False
 
 def extract_text_from_pdf(pdf_file):
     try:
@@ -76,8 +49,6 @@ def extract_text_from_pdf(pdf_file):
             )
             
             word_list = [w['text'].strip() for w in words]
-
-            
             
             # Process Results section
             for i, word in enumerate(word_list):
@@ -165,15 +136,17 @@ def extract_text_from_pdf(pdf_file):
 
 def main():
     st.set_page_config(layout="wide")
-    st.title("ReOxy Reports Interpreter")
+    st.title("PDF Text Extractor")
     
-    # Add OpenAI test button at the top
-    if st.button("Test OpenAI Connection"):
-        test_openai()
-    
-    # Initialize session state for uploaded files
+    # Create a session state to store uploaded files if it doesn't exist
     if 'uploaded_files' not in st.session_state:
         st.session_state.uploaded_files = []
+    
+    # Add a clear button before the file uploader
+    if st.button("Clear all files"):
+        st.session_state.uploaded_files = []
+        st.session_state.clear()  # This will clear all session state, including the file uploader
+        st.rerun()
     
     # File uploader
     new_files = st.file_uploader(
@@ -183,61 +156,55 @@ def main():
         key='pdf_uploader'
     )
     
-    # Only show clear button if there are files uploaded
+    # Add new files to session state
     if new_files:
-        st.session_state.uploaded_files = []
-                    
-        # Process new files
-       
+        # Get filenames of existing files
+        existing_filenames = {f.name for f in st.session_state.uploaded_files}
+        
+        # Add only new files that aren't already in the list
         for file in new_files:
-            file_copy = io.BytesIO(file.read())
-            file_copy.name = file.name
-            file.seek(0)
-            st.session_state.uploaded_files.append(file_copy)
-        
-        # Process uploaded files and extract data
-        all_results = {}
-        first_patient = None  # Initialize variable to hold the first patient's data
-
-        for uploaded_file in st.session_state.uploaded_files:
-            try:
-                formatted_text, patient_data = extract_text_from_pdf(uploaded_file)
-                treatment_num = int(patient_data['treatment_number'])
-                all_results[treatment_num] = patient_data
-                
-                # Store the first patient's data
-                if first_patient is None:
-                    first_patient = patient_data
-            except Exception as e:
-                st.error(f"Error processing {uploaded_file.name}: {str(e)}")
-        
-        # Display Patient Information for the first patient only
-        if first_patient:
-            st.subheader("Patient Information")
-            st.write(f"**Patient Name:** {first_patient['patient_name']}")
-            st.write(f"**Date of Birth:** {first_patient['date_of_birth']}")
-            st.write(f"**Sex:** {first_patient['sex']}")
-
+            if file.name not in existing_filenames:
+                # Create a new BytesIO object with the file content
+                file_copy = io.BytesIO(file.read())
+                file_copy.name = file.name  # Preserve the filename
+                file.seek(0)  # Reset the original file pointer
+                st.session_state.uploaded_files.append(file_copy)
+    
+    # Dictionary to store all results, keyed by treatment number
+    all_results = {}
+    
+    # Process each uploaded file
+    for uploaded_file in st.session_state.uploaded_files:
+        try:
+            # Reset file pointer before processing
+            uploaded_file.seek(0)
+            formatted_text, patient_data = extract_text_from_pdf(uploaded_file)
+            
+            # Use treatment number as key
+            treatment_num = int(patient_data['treatment_number'])
+            all_results[treatment_num] = patient_data
+            
+        except Exception as e:
+            st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+    
+    if all_results:
         # Sort results by treatment number
         sorted_results = OrderedDict(sorted(all_results.items()))
-
-        # Display the rest of the extracted results
-        st.subheader("Extracted Results")
-
+        
         # Create a table header
         cols = st.columns(len(sorted_results) + 1)  # +1 for labels column
-
+        
         # Labels column
-        ## cols[0].write("Field")
+        cols[0].write("Field")
         for i, (treatment_num, data) in enumerate(sorted_results.items(), 1):
             cols[i].write(f"Session {treatment_num}")
-
+        
         # Data rows
         fields = [
-          ##  ('patient_name', 'Patient Name'),
-          ##  ('reference_number', 'Reference Number'),
-          ##  ('sex', 'Sex'),
-          ##  ('date_of_birth', 'Date of Birth'),
+            ('patient_name', 'Patient Name'),
+            ('reference_number', 'Reference Number'),
+            ('sex', 'Sex'),
+            ('date_of_birth', 'Date of Birth'),
             ('treatment_date', 'Treatment Date'),
             ('total_duration', 'Total Duration'),
             ('total_hypoxic_time', 'Total Hypoxic Time'),
@@ -255,14 +222,14 @@ def main():
             ('pr_elevation_bpm', 'PR Elevation (BPM)'),
             ('pr_elevation_percent', 'PR Elevation (%)')
         ]
-
+        
         # Create rows
         for field_key, field_label in fields:
             cols = st.columns(len(sorted_results) + 1)
             cols[0].write(field_label)
             for i, data in enumerate(sorted_results.values(), 1):
                 cols[i].write(data[field_key])
-
+        
         # Add download button for CSV
         # Convert to DataFrame
         df = pd.DataFrame.from_dict(sorted_results, orient='index')
