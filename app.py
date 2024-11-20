@@ -138,14 +138,9 @@ def main():
     st.set_page_config(layout="wide")
     st.title("PDF Text Extractor")
     
-    # Create a session state to store uploaded files if it doesn't exist
+    # Initialize session state for uploaded files
     if 'uploaded_files' not in st.session_state:
         st.session_state.uploaded_files = []
-    
-    # Add a clear button before the file uploader
-    if st.button("Clear all information"):
-        st.session_state.uploaded_files = []  # Clear uploaded files
-        st.stop()  # Stop execution to refresh the state
     
     # File uploader
     new_files = st.file_uploader(
@@ -155,83 +150,83 @@ def main():
         key='pdf_uploader'
     )
     
-    # Reset the uploaded files list when files are removed
-    if new_files is not None:
-        # Clear the existing uploaded files
+    # Only show clear button if there are files uploaded
+    if new_files:
         st.session_state.uploaded_files = []
-        
-        # Add current files to session state
+                    
+        # Process new files
+       
         for file in new_files:
             file_copy = io.BytesIO(file.read())
             file_copy.name = file.name
             file.seek(0)
             st.session_state.uploaded_files.append(file_copy)
-    
-    # Process uploaded files and extract data
-    all_results = {}
-    for uploaded_file in st.session_state.uploaded_files:
-        try:
-            formatted_text, patient_data = extract_text_from_pdf(uploaded_file)
-            treatment_num = int(patient_data['treatment_number'])
-            all_results[treatment_num] = patient_data
-        except Exception as e:
-            st.error(f"Error processing {uploaded_file.name}: {str(e)}")
-    
-    if all_results:
-        # Sort results by treatment number
-        sorted_results = OrderedDict(sorted(all_results.items()))
         
-        # Create a table header
-        cols = st.columns(len(sorted_results) + 1)  # +1 for labels column
+        # Process uploaded files and extract data
+        all_results = {}
+        for uploaded_file in st.session_state.uploaded_files:
+            try:
+                formatted_text, patient_data = extract_text_from_pdf(uploaded_file)
+                treatment_num = int(patient_data['treatment_number'])
+                all_results[treatment_num] = patient_data
+            except Exception as e:
+                st.error(f"Error processing {uploaded_file.name}: {str(e)}")
         
-        # Labels column
-        cols[0].write("Field")
-        for i, (treatment_num, data) in enumerate(sorted_results.items(), 1):
-            cols[i].write(f"Session {treatment_num}")
-        
-        # Data rows
-        fields = [
-            ('patient_name', 'Patient Name'),
-            ('reference_number', 'Reference Number'),
-            ('sex', 'Sex'),
-            ('date_of_birth', 'Date of Birth'),
-            ('treatment_date', 'Treatment Date'),
-            ('total_duration', 'Total Duration'),
-            ('total_hypoxic_time', 'Total Hypoxic Time'),
-            ('adjustment_time', 'Adjustment Time'),
-            ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
-            ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
-            ('min_spo2_average', 'Min SpO2 Average'),
-            ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
-            ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
-            ('max_spo2_average', 'Max SpO2 Average'),
-            ('baseline_pr', 'Baseline PR'),
-            ('min_pr_average', 'Min PR Average'),
-            ('max_pr_average', 'Max PR Average'),
-            ('pr_after_procedure', 'PR After Procedure'),
-            ('pr_elevation_bpm', 'PR Elevation (BPM)'),
-            ('pr_elevation_percent', 'PR Elevation (%)')
-        ]
-        
-        # Create rows
-        for field_key, field_label in fields:
-            cols = st.columns(len(sorted_results) + 1)
-            cols[0].write(field_label)
-            for i, data in enumerate(sorted_results.values(), 1):
-                cols[i].write(data[field_key])
-        
-        # Add download button for CSV
-        # Convert to DataFrame
-        df = pd.DataFrame.from_dict(sorted_results, orient='index')
-        
-        # Create CSV
-        csv = df.to_csv(index=True)
-        st.download_button(
-            label="Download as CSV",
-            data=csv,
-            file_name="treatment_results.csv",
-            mime="text/csv"
-        )
+        if all_results:
+            # Sort results by treatment number
+            sorted_results = OrderedDict(sorted(all_results.items()))
+            
+            # Create a table header
+            cols = st.columns(len(sorted_results) + 1)  # +1 for labels column
+            
+            # Labels column
+            cols[0].write("Field")
+            for i, (treatment_num, data) in enumerate(sorted_results.items(), 1):
+                cols[i].write(f"Session {treatment_num}")
+            
+            # Data rows
+            fields = [
+                ('patient_name', 'Patient Name'),
+                ('reference_number', 'Reference Number'),
+                ('sex', 'Sex'),
+                ('date_of_birth', 'Date of Birth'),
+                ('treatment_date', 'Treatment Date'),
+                ('total_duration', 'Total Duration'),
+                ('total_hypoxic_time', 'Total Hypoxic Time'),
+                ('adjustment_time', 'Adjustment Time'),
+                ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
+                ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
+                ('min_spo2_average', 'Min SpO2 Average'),
+                ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
+                ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
+                ('max_spo2_average', 'Max SpO2 Average'),
+                ('baseline_pr', 'Baseline PR'),
+                ('min_pr_average', 'Min PR Average'),
+                ('max_pr_average', 'Max PR Average'),
+                ('pr_after_procedure', 'PR After Procedure'),
+                ('pr_elevation_bpm', 'PR Elevation (BPM)'),
+                ('pr_elevation_percent', 'PR Elevation (%)')
+            ]
+            
+            # Create rows
+            for field_key, field_label in fields:
+                cols = st.columns(len(sorted_results) + 1)
+                cols[0].write(field_label)
+                for i, data in enumerate(sorted_results.values(), 1):
+                    cols[i].write(data[field_key])
+            
+            # Add download button for CSV
+            # Convert to DataFrame
+            df = pd.DataFrame.from_dict(sorted_results, orient='index')
+            
+            # Create CSV
+            csv = df.to_csv(index=True)
+            st.download_button(
+                label="Download as CSV",
+                data=csv,
+                file_name="treatment_results.csv",
+                mime="text/csv"
+            )
 
 if __name__ == "__main__":
     main() 
