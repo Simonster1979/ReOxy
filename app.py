@@ -49,6 +49,8 @@ def extract_text_from_pdf(pdf_file):
             )
             
             word_list = [w['text'].strip() for w in words]
+
+            
             
             # Process Results section
             for i, word in enumerate(word_list):
@@ -136,7 +138,7 @@ def extract_text_from_pdf(pdf_file):
 
 def main():
     st.set_page_config(layout="wide")
-    st.title("PDF Text Extractor")
+    st.title("ReOxy Reports Interpreter")
     
     # Initialize session state for uploaded files
     if 'uploaded_files' not in st.session_state:
@@ -164,69 +166,84 @@ def main():
         
         # Process uploaded files and extract data
         all_results = {}
+        first_patient = None  # Initialize variable to hold the first patient's data
+
         for uploaded_file in st.session_state.uploaded_files:
             try:
                 formatted_text, patient_data = extract_text_from_pdf(uploaded_file)
                 treatment_num = int(patient_data['treatment_number'])
                 all_results[treatment_num] = patient_data
+                
+                # Store the first patient's data
+                if first_patient is None:
+                    first_patient = patient_data
             except Exception as e:
                 st.error(f"Error processing {uploaded_file.name}: {str(e)}")
         
-        if all_results:
-            # Sort results by treatment number
-            sorted_results = OrderedDict(sorted(all_results.items()))
-            
-            # Create a table header
-            cols = st.columns(len(sorted_results) + 1)  # +1 for labels column
-            
-            # Labels column
-            cols[0].write("Field")
-            for i, (treatment_num, data) in enumerate(sorted_results.items(), 1):
-                cols[i].write(f"Session {treatment_num}")
-            
-            # Data rows
-            fields = [
-                ('patient_name', 'Patient Name'),
-                ('reference_number', 'Reference Number'),
-                ('sex', 'Sex'),
-                ('date_of_birth', 'Date of Birth'),
-                ('treatment_date', 'Treatment Date'),
-                ('total_duration', 'Total Duration'),
-                ('total_hypoxic_time', 'Total Hypoxic Time'),
-                ('adjustment_time', 'Adjustment Time'),
-                ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
-                ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
-                ('min_spo2_average', 'Min SpO2 Average'),
-                ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
-                ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
-                ('max_spo2_average', 'Max SpO2 Average'),
-                ('baseline_pr', 'Baseline PR'),
-                ('min_pr_average', 'Min PR Average'),
-                ('max_pr_average', 'Max PR Average'),
-                ('pr_after_procedure', 'PR After Procedure'),
-                ('pr_elevation_bpm', 'PR Elevation (BPM)'),
-                ('pr_elevation_percent', 'PR Elevation (%)')
-            ]
-            
-            # Create rows
-            for field_key, field_label in fields:
-                cols = st.columns(len(sorted_results) + 1)
-                cols[0].write(field_label)
-                for i, data in enumerate(sorted_results.values(), 1):
-                    cols[i].write(data[field_key])
-            
-            # Add download button for CSV
-            # Convert to DataFrame
-            df = pd.DataFrame.from_dict(sorted_results, orient='index')
-            
-            # Create CSV
-            csv = df.to_csv(index=True)
-            st.download_button(
-                label="Download as CSV",
-                data=csv,
-                file_name="treatment_results.csv",
-                mime="text/csv"
-            )
+        # Display Patient Information for the first patient only
+        if first_patient:
+            st.subheader("Patient Information")
+            st.write(f"**Patient Name:** {first_patient['patient_name']}")
+            st.write(f"**Date of Birth:** {first_patient['date_of_birth']}")
+            st.write(f"**Sex:** {first_patient['sex']}")
+
+        # Sort results by treatment number
+        sorted_results = OrderedDict(sorted(all_results.items()))
+
+        # Display the rest of the extracted results
+        st.subheader("Extracted Results")
+
+        # Create a table header
+        cols = st.columns(len(sorted_results) + 1)  # +1 for labels column
+
+        # Labels column
+        ## cols[0].write("Field")
+        for i, (treatment_num, data) in enumerate(sorted_results.items(), 1):
+            cols[i].write(f"Session {treatment_num}")
+
+        # Data rows
+        fields = [
+          ##  ('patient_name', 'Patient Name'),
+          ##  ('reference_number', 'Reference Number'),
+          ##  ('sex', 'Sex'),
+          ##  ('date_of_birth', 'Date of Birth'),
+            ('treatment_date', 'Treatment Date'),
+            ('total_duration', 'Total Duration'),
+            ('total_hypoxic_time', 'Total Hypoxic Time'),
+            ('adjustment_time', 'Adjustment Time'),
+            ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
+            ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
+            ('min_spo2_average', 'Min SpO2 Average'),
+            ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
+            ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
+            ('max_spo2_average', 'Max SpO2 Average'),
+            ('baseline_pr', 'Baseline PR'),
+            ('min_pr_average', 'Min PR Average'),
+            ('max_pr_average', 'Max PR Average'),
+            ('pr_after_procedure', 'PR After Procedure'),
+            ('pr_elevation_bpm', 'PR Elevation (BPM)'),
+            ('pr_elevation_percent', 'PR Elevation (%)')
+        ]
+
+        # Create rows
+        for field_key, field_label in fields:
+            cols = st.columns(len(sorted_results) + 1)
+            cols[0].write(field_label)
+            for i, data in enumerate(sorted_results.values(), 1):
+                cols[i].write(data[field_key])
+
+        # Add download button for CSV
+        # Convert to DataFrame
+        df = pd.DataFrame.from_dict(sorted_results, orient='index')
+        
+        # Create CSV
+        csv = df.to_csv(index=True)
+        st.download_button(
+            label="Download as CSV",
+            data=csv,
+            file_name="treatment_results.csv",
+            mime="text/csv"
+        )
 
 if __name__ == "__main__":
     main() 
