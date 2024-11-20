@@ -466,8 +466,9 @@ def analyze_hypoxic_time(sorted_results):
 
 def main():
     st.set_page_config(layout="wide")
-    st.title("ReOxy Reports Interpreter")
     
+    st.title("ReOxy Reports Interpreter")
+        
     # Changed order to make Claude the default
     ai_model = st.sidebar.selectbox(
         "Select AI Model",
@@ -488,154 +489,201 @@ def main():
     
     # Only show clear button if there are files uploaded
     if new_files:
-        st.session_state.uploaded_files = []
+        # Show loading overlay while processing files
+        with st.spinner('Processing PDF files... Please wait.'):
+            st.session_state.uploaded_files = []
+            
+            # First, validate all files have the same patient name
+            patient_names = set()
+            valid_files = []
+            
+            def is_valid_reoxy_report(patient_data):
+                # Define required fields that should be present in a ReOxy report
+                required_fields = [
+                    'total_duration',
+                    'total_hypoxic_time',
+                    'number_of_hypoxic_phases',
+                    'min_spo2_average',
+                    'number_of_hyperoxic_phases',
+                    'max_spo2_average',
+                    'baseline_pr',
+                    'pr_elevation_percent'
+                ]
+                
+                # Check if all required fields exist and have non-empty values
+                for field in required_fields:
+                    if field not in patient_data or not patient_data[field]:
+                        return False
+                return True
+            
+            for file in new_files:
+                file_copy = io.BytesIO(file.read())
+                file_copy.name = file.name
+                file.seek(0)
+                
+                try:
+                    # Extract data and validate
+                    formatted_text, patient_data = extract_text_from_pdf(file_copy)
                     
-        # Process new files
-       
-        for file in new_files:
-            file_copy = io.BytesIO(file.read())
-            file_copy.name = file.name
-            file.seek(0)
-            st.session_state.uploaded_files.append(file_copy)
-        
-        # Process uploaded files and extract data
-        all_results = {}
-        first_patient = None  # Initialize variable to hold the first patient's data
+                    # Check if it's a valid ReOxy report
+                    if not is_valid_reoxy_report(patient_data):
+                        st.error(f"Error: {file.name} does not appear to be a valid ReOxy report. Please upload only ReOxy PDF reports. ReLoad the page")
+                        continue
+                    
+                    patient_names.add(patient_data['patient_name'])
+                    valid_files.append(file_copy)
+                except Exception as e:
+                    st.error(f"Error processing {file.name}: {str(e)}")
+            
+            # Check if all files are for the same patient
+            if len(patient_names) > 1:
+                st.error("Error: Multiple patient names detected. Please upload files for the same patient only. ReLoad the page")
+                return
+            elif len(patient_names) == 0:
+                st.error("Error: No valid ReOxy reports found in uploaded files.")
+                return
+            
+            # If validation passes, proceed with processing
+            st.session_state.uploaded_files = valid_files
+            
+            # Process uploaded files and extract data
+            all_results = {}
+            first_patient = None
+            
+            for uploaded_file in st.session_state.uploaded_files:
+                try:
+                    formatted_text, patient_data = extract_text_from_pdf(uploaded_file)
+                    treatment_num = int(patient_data['treatment_number'])
+                    all_results[treatment_num] = patient_data
+                    
+                    # Store the first patient's data
+                    if first_patient is None:
+                        first_patient = patient_data
+                except Exception as e:
+                    st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+            
+            # Sort results by treatment number
+            sorted_results = OrderedDict(sorted(all_results.items()))
 
-        for uploaded_file in st.session_state.uploaded_files:
-            try:
-                formatted_text, patient_data = extract_text_from_pdf(uploaded_file)
-                treatment_num = int(patient_data['treatment_number'])
-                all_results[treatment_num] = patient_data
+            # After processing files and before displaying the table
+            if sorted_results:
+                # Display Patient Information first
+                st.subheader("Patient Information")
+                first_patient = next(iter(sorted_results.values()))
+                st.write(f"**Patient Name:** {first_patient['patient_name']}")
+                st.write(f"**Date of Birth:** {first_patient['date_of_birth']}")
+                st.write(f"**Sex:** {first_patient['sex']}")
                 
-                # Store the first patient's data
-                if first_patient is None:
-                    first_patient = patient_data
-            except Exception as e:
-                st.error(f"Error processing {uploaded_file.name}: {str(e)}")
-        
-        # Sort results by treatment number
-        sorted_results = OrderedDict(sorted(all_results.items()))
-
-        # After processing files and before displaying the table
-        if sorted_results:
-            # Display Patient Information first
-            st.subheader("Patient Information")
-            first_patient = next(iter(sorted_results.values()))
-            st.write(f"**Patient Name:** {first_patient['patient_name']}")
-            st.write(f"**Date of Birth:** {first_patient['date_of_birth']}")
-            st.write(f"**Sex:** {first_patient['sex']}")
-            
-            # Add a separator
-            st.markdown("---")
-            
-            # Keep two columns
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("Session Comparison")
-                if len(sorted_results) > 1:
-                    comparison = compare_sessions_claude(sorted_results) if ai_model == "Claude 3 Sonnet" else compare_sessions_openai(sorted_results)
-                    st.write(comparison)
-                else:
-                    st.write("Upload multiple sessions to see comparison")
-            
-            with col2:
-                st.subheader("Treatment Recommendations")
-                latest_session = sorted_results[max(sorted_results.keys())]
-                recommendations = generate_recommendations_claude(latest_session) if ai_model == "Claude 3 Sonnet" else generate_recommendations(latest_session)
-                st.write(recommendations)
-            
-            # Add a separator before the table
-            st.markdown("---")
-            
-                  # Add charts section
- 
-            st.subheader("Treatment Progress Charts")
-            
-            if len(sorted_results) > 1:  # Only show charts if there are multiple sessions
-                fig_pr_comparison, fig_phases, fig_hypoxic_time = create_charts(sorted_results)
-                
-                # Display phase duration chart and analysis
-                chart_col1, chart_col2 = st.columns(2)
-                with chart_col1:
-                    st.plotly_chart(fig_phases, use_container_width=True, key="phase_duration_chart")
-                with chart_col2:
-                    st.write("**Phase Duration Analysis:**")
-                    phase_analysis = analyze_hyperoxic_duration(sorted_results)
-                    st.write(phase_analysis)
-                
-                # Display PR comparison and analysis
-                pr_col1, pr_col2 = st.columns(2)
-                with pr_col1:
-                    st.plotly_chart(fig_pr_comparison, use_container_width=True, key="pr_comparison_chart")
-                with pr_col2:
-                    st.write("**Pulse Rate Analysis:**")
-                    pr_analysis = analyze_pr_trends(sorted_results)
-                    st.write(pr_analysis)
-                
-                # Display Total Hypoxic Time chart and analysis
-                hypoxic_col1, hypoxic_col2 = st.columns(2)
-                with hypoxic_col1:
-                    st.plotly_chart(fig_hypoxic_time, use_container_width=True, key="hypoxic_time_chart")
-                with hypoxic_col2:
-                    st.write("**Total Hypoxic Time Analysis:**")
-                    hypoxic_analysis = analyze_hypoxic_time(sorted_results)
-                    st.write(hypoxic_analysis)
-                
-                # Add a separator before the extracted results
+                # Add a separator
                 st.markdown("---")
                 
-                # Display extracted results in an expander
-                with st.expander("Extracted Results", expanded=False):
-                    # Create a table header
-                    cols = st.columns(len(sorted_results) + 1)  # +1 for labels column
+                # Keep two columns
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.subheader("Session Comparison")
+                    if len(sorted_results) > 1:
+                        comparison = compare_sessions_claude(sorted_results) if ai_model == "Claude 3 Sonnet" else compare_sessions_openai(sorted_results)
+                        st.write(comparison)
+                    else:
+                        st.write("Upload multiple sessions to see comparison")
+                
+                with col2:
+                    st.subheader("Treatment Recommendations")
+                    latest_session = sorted_results[max(sorted_results.keys())]
+                    recommendations = generate_recommendations_claude(latest_session) if ai_model == "Claude 3 Sonnet" else generate_recommendations(latest_session)
+                    st.write(recommendations)
+                
+                # Add a separator before the table
+                st.markdown("---")
+                
+                  # Add charts section
+ 
+                st.subheader("Treatment Progress Charts")
+                
+                if len(sorted_results) > 1:  # Only show charts if there are multiple sessions
+                    fig_pr_comparison, fig_phases, fig_hypoxic_time = create_charts(sorted_results)
                     
-                    # Labels column
-                    for i, (treatment_num, data) in enumerate(sorted_results.items(), 1):
-                        cols[i].write(f"Session {treatment_num}")
+                    # Display phase duration chart and analysis
+                    chart_col1, chart_col2 = st.columns(2)
+                    with chart_col1:
+                        st.plotly_chart(fig_phases, use_container_width=True, key="phase_duration_chart")
+                    with chart_col2:
+                        st.write("**Phase Duration Analysis:**")
+                        phase_analysis = analyze_hyperoxic_duration(sorted_results)
+                        st.write(phase_analysis)
                     
-                    # Data rows
-                    fields = [
-                        ('treatment_date', 'Treatment Date'),
-                        ('total_duration', 'Total Duration'),
-                        ('total_hypoxic_time', 'Total Hypoxic Time'),
-                        ('adjustment_time', 'Adjustment Time'),
-                        ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
-                        ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
-                        ('min_spo2_average', 'Min SpO2 Average'),
-                        ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
-                        ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
-                        ('max_spo2_average', 'Max SpO2 Average'),
-                        ('baseline_pr', 'Baseline PR'),
-                        ('min_pr_average', 'Min PR Average'),
-                        ('max_pr_average', 'Max PR Average'),
-                        ('pr_after_procedure', 'PR After Procedure'),
-                        ('pr_elevation_bpm', 'PR Elevation (BPM)'),
-                        ('pr_elevation_percent', 'PR Elevation (%)')
-                    ]
+                    # Display PR comparison and analysis
+                    pr_col1, pr_col2 = st.columns(2)
+                    with pr_col1:
+                        st.plotly_chart(fig_pr_comparison, use_container_width=True, key="pr_comparison_chart")
+                    with pr_col2:
+                        st.write("**Pulse Rate Analysis:**")
+                        pr_analysis = analyze_pr_trends(sorted_results)
+                        st.write(pr_analysis)
                     
-                    # Create rows
-                    for field_key, field_label in fields:
-                        cols = st.columns(len(sorted_results) + 1)
-                        cols[0].write(field_label)
-                        for i, data in enumerate(sorted_results.values(), 1):
-                            cols[i].write(data[field_key])
-            else:
-                st.write("Upload multiple sessions to see progress charts")
+                    # Display Total Hypoxic Time chart and analysis
+                    hypoxic_col1, hypoxic_col2 = st.columns(2)
+                    with hypoxic_col1:
+                        st.plotly_chart(fig_hypoxic_time, use_container_width=True, key="hypoxic_time_chart")
+                    with hypoxic_col2:
+                        st.write("**Total Hypoxic Time Analysis:**")
+                        hypoxic_analysis = analyze_hypoxic_time(sorted_results)
+                        st.write(hypoxic_analysis)
+                    
+                    # Add a separator before the extracted results
+                    st.markdown("---")
+                    
+                    # Display extracted results in an expander
+                    with st.expander("Extracted Results", expanded=False):
+                        # Create a table header
+                        cols = st.columns(len(sorted_results) + 1)  # +1 for labels column
+                        
+                        # Labels column
+                        for i, (treatment_num, data) in enumerate(sorted_results.items(), 1):
+                            cols[i].write(f"Session {treatment_num}")
+                        
+                        # Data rows
+                        fields = [
+                            ('treatment_date', 'Treatment Date'),
+                            ('total_duration', 'Total Duration'),
+                            ('total_hypoxic_time', 'Total Hypoxic Time'),
+                            ('adjustment_time', 'Adjustment Time'),
+                            ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
+                            ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
+                            ('min_spo2_average', 'Min SpO2 Average'),
+                            ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
+                            ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
+                            ('max_spo2_average', 'Max SpO2 Average'),
+                            ('baseline_pr', 'Baseline PR'),
+                            ('min_pr_average', 'Min PR Average'),
+                            ('max_pr_average', 'Max PR Average'),
+                            ('pr_after_procedure', 'PR After Procedure'),
+                            ('pr_elevation_bpm', 'PR Elevation (BPM)'),
+                            ('pr_elevation_percent', 'PR Elevation (%)')
+                        ]
+                        
+                        # Create rows
+                        for field_key, field_label in fields:
+                            cols = st.columns(len(sorted_results) + 1)
+                            cols[0].write(field_label)
+                            for i, data in enumerate(sorted_results.values(), 1):
+                                cols[i].write(data[field_key])
+                else:
+                    st.write("Upload multiple sessions to see progress charts")
 
-            # Add download button for CSV
-            # Convert to DataFrame
-            df = pd.DataFrame.from_dict(sorted_results, orient='index')
-            
-            # Create CSV
-            csv = df.to_csv(index=True)
-            st.download_button(
-                label="Download as CSV",
-                data=csv,
-                file_name="treatment_results.csv",
-                mime="text/csv"
-            )
+                # Add download button for CSV
+                # Convert to DataFrame
+                df = pd.DataFrame.from_dict(sorted_results, orient='index')
+                
+                # Create CSV
+                csv = df.to_csv(index=True)
+                st.download_button(
+                    label="Download as CSV",
+                    data=csv,
+                    file_name="treatment_results.csv",
+                    mime="text/csv"
+                )
 
 if __name__ == "__main__":
     main() 
