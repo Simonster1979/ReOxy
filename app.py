@@ -146,51 +146,6 @@ def extract_text_from_pdf(pdf_file):
         st.write("Full error:", str(e))
         return [], {}
 
-def summarize_report(patient_data):
-    try:
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        prompt = f"""
-        Summarize this ReOxy treatment data:
-        Patient: {patient_data['patient_name']}
-        Treatment Date: {patient_data['treatment_date']}
-        Key Metrics:
-        - Total Duration: {patient_data['total_duration']}
-        - Total Hypoxic Time: {patient_data['total_hypoxic_time']}
-        - Min SpO2 Average: {patient_data['min_spo2_average']}
-        - Max SpO2 Average: {patient_data['max_spo2_average']}
-        """
-        
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Error generating summary: {str(e)}"
-
-def summarize_report_claude(patient_data):
-    try:
-        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        prompt = f"""
-        Summarize this ReOxy treatment data:
-        Patient: {patient_data['patient_name']}
-        Treatment Date: {patient_data['treatment_date']}
-        Key Metrics:
-        - Total Duration: {patient_data['total_duration']}
-        - Total Hypoxic Time: {patient_data['total_hypoxic_time']}
-        - Min SpO2 Average: {patient_data['min_spo2_average']}
-        - Max SpO2 Average: {patient_data['max_spo2_average']}
-        """
-        
-        response = client.messages.create(
-            model="claude-3-sonnet-20240229",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.content[0].text
-    except Exception as e:
-        return f"Error generating summary: {str(e)}"
-
 def compare_sessions_openai(sorted_results):
     try:
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -198,13 +153,23 @@ def compare_sessions_openai(sorted_results):
         for treatment_num, data in sorted_results.items():
             sessions_data.append(f"""
             Session {treatment_num}:
-            - Duration: {data['total_duration']}
-            - Hypoxic Time: {data['total_hypoxic_time']}
+            Adaptive Response Metrics:
+            - PR Elevation: {data['pr_elevation_percent']}%
+            - Baseline PR: {data['baseline_pr']}
+            - PR After Treatment: {data['pr_after_procedure']}
             - Min SpO2: {data['min_spo2_average']}
             - Max SpO2: {data['max_spo2_average']}
+            - Total Hypoxic Time: {data['total_hypoxic_time']}
             """)
         
-        prompt = f"Compare these ReOxy treatment sessions and highlight key differences:\n{''.join(sessions_data)}"
+        prompt = f"""Analyze the adaptive response changes between these ReOxy sessions. Focus on:
+        1. Heart rate adaptation trends
+        2. SpO2 tolerance improvements
+        3. Changes in hypoxic exposure tolerance
+        
+        Sessions:{''.join(sessions_data)}
+        
+        Highlight key improvements in physiological adaptation between sessions."""
         
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -221,21 +186,32 @@ def compare_sessions_claude(sorted_results):
         for treatment_num, data in sorted_results.items():
             sessions_data.append(f"""
             Session {treatment_num}:
-            - Duration: {data['total_duration']}
-            - Hypoxic Time: {data['total_hypoxic_time']}
-            - Min SpO2: {data['min_spo2_average']}
-            - Max SpO2: {data['max_spo2_average']}
+            Adaptive Response Metrics:
             - PR Elevation: {data['pr_elevation_percent']}%
             - Baseline PR: {data['baseline_pr']}
-            - PR After: {data['pr_after_procedure']}
+            - PR After Treatment: {data['pr_after_procedure']}
+            - Min SpO2: {data['min_spo2_average']}
+            - Max SpO2: {data['max_spo2_average']}
+            - Total Hypoxic Time: {data['total_hypoxic_time']}
             """)
         
-        prompt = f"""Compare these ReOxy treatment sessions and provide:
-        1. Key differences between sessions
-        2. Any trends or patterns in the data
-        3. Notable improvements or areas of concern
+        prompt = f"""Analyze the adaptive response across these ReOxy treatment sessions:
+
+        1. Compare heart rate adaptations:
+           - Changes in baseline PR between sessions
+           - PR elevation trends
+           - Post-treatment PR recovery patterns
         
-        Sessions:{''.join(sessions_data)}"""
+        2. Analyze SpO2 adaptation:
+           - Changes in minimum SpO2 tolerance
+           - Adaptation to hypoxic exposure time
+           - Overall adaptation to hypoxic stress
+        
+        3. Highlight any improvements or changes in adaptive capacity between sessions.
+
+        Sessions:{''.join(sessions_data)}
+        
+        Please focus on physiological adaptations and improvements in tolerance to hypoxic stress."""
         
         response = client.messages.create(
             model="claude-3-sonnet-20240229",
@@ -263,6 +239,36 @@ def generate_recommendations(patient_data):
             messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content
+    except Exception as e:
+        return f"Error generating recommendations: {str(e)}"
+
+def generate_recommendations_claude(patient_data):
+    try:
+        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        prompt = f"""
+        Based on this ReOxy treatment data, provide specific recommendations for future treatments:
+        
+        Patient Data:
+        - Total Duration: {patient_data['total_duration']}
+        - Total Hypoxic Time: {patient_data['total_hypoxic_time']}
+        - Min SpO2 Average: {patient_data['min_spo2_average']}
+        - Max SpO2 Average: {patient_data['max_spo2_average']}
+        - PR Elevation: {patient_data['pr_elevation_percent']}%
+        - Baseline PR: {patient_data['baseline_pr']}
+        - PR After: {patient_data['pr_after_procedure']}
+        
+        Please provide:
+        1. Specific adjustments for future sessions
+        2. Safety considerations based on the data
+        3. Potential areas for improvement
+        """
+        
+        response = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.content[0].text
     except Exception as e:
         return f"Error generating recommendations: {str(e)}"
 
@@ -359,16 +365,10 @@ def main():
             # Add a separator
             st.markdown("---")
             
-            # Create three columns for the different analyses
-            col1, col2, col3 = st.columns(3)
+            # Keep two columns
+            col1, col2 = st.columns(2)
             
             with col1:
-                st.subheader("Session Summary")
-                latest_session = sorted_results[max(sorted_results.keys())]
-                summary = summarize_report_claude(latest_session) if ai_model == "Claude 3 Sonnet" else summarize_report(latest_session)
-                st.write(summary)
-            
-            with col2:
                 st.subheader("Session Comparison")
                 if len(sorted_results) > 1:
                     comparison = compare_sessions_claude(sorted_results) if ai_model == "Claude 3 Sonnet" else compare_sessions_openai(sorted_results)
@@ -376,9 +376,10 @@ def main():
                 else:
                     st.write("Upload multiple sessions to see comparison")
             
-            with col3:
+            with col2:
                 st.subheader("Treatment Recommendations")
-                recommendations = generate_recommendations(latest_session)
+                latest_session = sorted_results[max(sorted_results.keys())]
+                recommendations = generate_recommendations_claude(latest_session) if ai_model == "Claude 3 Sonnet" else generate_recommendations(latest_session)
                 st.write(recommendations)
             
             # Add a separator before the table
