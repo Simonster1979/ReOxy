@@ -273,32 +273,196 @@ def generate_recommendations_claude(patient_data):
         return f"Error generating recommendations: {str(e)}"
 
 def create_charts(sorted_results):
-    # Convert the data for plotting
     treatment_numbers = list(sorted_results.keys())
-    data = {
-        'SpO2 Min': [float(data['min_spo2_average'].replace(' %', '')) for data in sorted_results.values()],
-        'SpO2 Max': [float(data['max_spo2_average'].replace(' %', '')) for data in sorted_results.values()],
-        'PR Elevation': [float(data['pr_elevation_percent'].replace(',', '.')) for data in sorted_results.values()],
-        'Total Duration': [int(data['total_duration'].split(':')[0]) for data in sorted_results.values()]
-    }
     
-    # SpO2 Line Chart
-    fig_spo2 = go.Figure()
-    fig_spo2.add_trace(go.Scatter(x=treatment_numbers, y=data['SpO2 Min'], name='Min SpO2', mode='lines+markers'))
-    fig_spo2.add_trace(go.Scatter(x=treatment_numbers, y=data['SpO2 Max'], name='Max SpO2', mode='lines+markers'))
-    fig_spo2.update_layout(title='SpO2 Levels Across Sessions', xaxis_title='Session Number', yaxis_title='SpO2 (%)')
+    # Calculate PR Average and get PR after procedure and baseline
+    pr_averages = []
+    pr_after = []
+    pr_baseline = []
     
-    # PR Elevation Bar Chart
-    fig_pr = go.Figure()
-    fig_pr.add_trace(go.Bar(x=treatment_numbers, y=data['PR Elevation'], name='PR Elevation'))
-    fig_pr.update_layout(title='PR Elevation Across Sessions', xaxis_title='Session Number', yaxis_title='PR Elevation (%)')
+    for data in sorted_results.values():
+        # Calculate average of Min and Max PR
+        min_pr = float(data['min_pr_average'].split(' ')[0])
+        max_pr = float(data['max_pr_average'].split(' ')[0])
+        pr_avg = (min_pr + max_pr) / 2
+        pr_averages.append(pr_avg)
+        
+        # Get PR after procedure and baseline
+        pr_after.append(float(data['pr_after_procedure'].split(' ')[0]))
+        pr_baseline.append(float(data['baseline_pr'].split(' ')[0]))
     
-    # Duration Line Chart
-    fig_duration = go.Figure()
-    fig_duration.add_trace(go.Scatter(x=treatment_numbers, y=data['Total Duration'], mode='lines+markers'))
-    fig_duration.update_layout(title='Treatment Duration Across Sessions', xaxis_title='Session Number', yaxis_title='Duration (minutes)')
+    # PR Comparison Chart
+    fig_pr_comparison = go.Figure()
+    fig_pr_comparison.add_trace(go.Scatter(
+        x=treatment_numbers,
+        y=pr_baseline,
+        name='Baseline PR',
+        mode='lines+markers'
+    ))
+    fig_pr_comparison.add_trace(go.Scatter(
+        x=treatment_numbers,
+        y=pr_averages,
+        name='PR Average',
+        mode='lines+markers'
+    ))
+    fig_pr_comparison.add_trace(go.Scatter(
+        x=treatment_numbers,
+        y=pr_after,
+        name='PR After Procedure',
+        mode='lines+markers'
+    ))
+    fig_pr_comparison.update_layout(
+        title='Pulse Rate Trends Across Sessions',
+        xaxis_title='Session Number',
+        yaxis_title='Pulse Rate (bpm)'
+    )
     
-    return fig_spo2, fig_pr, fig_duration
+    # Process both hyperoxic and hypoxic duration data
+    hyperoxic_durations = []
+    hypoxic_durations = []
+    
+    for data in sorted_results.values():
+        # Process hyperoxic duration
+        hyper_str = data['hyperoxic_phase_duration_avg'].split(' ')[0]
+        hyper_min, hyper_sec = map(int, hyper_str.split(':'))
+        hyperoxic_durations.append(hyper_min + hyper_sec/60)
+        
+        # Process hypoxic duration
+        hypo_str = data['hypoxic_phase_duration_avg'].split(' ')[0]
+        hypo_min, hypo_sec = map(int, hypo_str.split(':'))
+        hypoxic_durations.append(hypo_min + hypo_sec/60)
+    
+    # Combined Phase Duration Chart
+    fig_phases = go.Figure()
+    fig_phases.add_trace(go.Scatter(
+        x=treatment_numbers, 
+        y=hyperoxic_durations, 
+        name='Hyperoxic Phase',
+        mode='lines+markers'
+    ))
+    fig_phases.add_trace(go.Scatter(
+        x=treatment_numbers, 
+        y=hypoxic_durations, 
+        name='Hypoxic Phase',
+        mode='lines+markers'
+    ))
+    fig_phases.update_layout(
+        title='Hyperoxic/Hypoxic Phase Durations Across Sessions',
+        xaxis_title='Session Number',
+        yaxis_title='Duration (minutes)'
+    )
+    
+    # Total Hypoxic Time Chart
+    hypoxic_times = []
+    for data in sorted_results.values():
+        time_str = data['total_hypoxic_time'].split(' ')[0]  # Get "MM:SS" part
+        minutes, seconds = map(int, time_str.split(':'))
+        total_minutes = minutes + seconds/60
+        hypoxic_times.append(total_minutes)
+    
+    fig_hypoxic_time = go.Figure()
+    fig_hypoxic_time.add_trace(go.Scatter(
+        x=treatment_numbers,
+        y=hypoxic_times,
+        mode='lines+markers'
+    ))
+    fig_hypoxic_time.update_layout(
+        title='Total Hypoxic Time Across Sessions',
+        xaxis_title='Session Number',
+        yaxis_title='Duration (minutes)'
+    )
+    
+    return fig_pr_comparison, fig_phases, fig_hypoxic_time
+
+def analyze_hyperoxic_duration(sorted_results):
+    try:
+        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        
+        sessions_data = []
+        for treatment_num, data in sorted_results.items():
+            sessions_data.append(f"""
+            Session {treatment_num}:
+            - Hyperoxic Phase Duration: {data['hyperoxic_phase_duration_avg']}
+            - Hypoxic Phase Duration: {data['hypoxic_phase_duration_avg']}
+            - PR Elevation: {data['pr_elevation_percent']}%
+            - SpO2 Max: {data['max_spo2_average']}
+            - SpO2 Min: {data['min_spo2_average']}
+            """)
+        
+        prompt = f"""Analyze the hyperoxic and hypoxic phase duration trends across these ReOxy sessions in 2-3 sentences. Focus on:
+        1. The relationship between hyperoxic and hypoxic durations
+        2. What these trends indicate about the patient's adaptive response to treatment
+
+        Sessions data:{''.join(sessions_data)}"""
+        
+        response = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.content[0].text
+    except Exception as e:
+        return f"Error analyzing phase durations: {str(e)}"
+
+def analyze_pr_trends(sorted_results):
+    try:
+        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        
+        sessions_data = []
+        for treatment_num, data in sorted_results.items():
+            min_pr = float(data['min_pr_average'].split(' ')[0])
+            max_pr = float(data['max_pr_average'].split(' ')[0])
+            pr_avg = (min_pr + max_pr) / 2
+            
+            sessions_data.append(f"""
+            Session {treatment_num}:
+            - PR Average: {pr_avg:.1f} bpm
+            - PR After Procedure: {data['pr_after_procedure']}
+            - PR Elevation: {data['pr_elevation_percent']}%
+            """)
+        
+        prompt = f"""Analyze the relationship between PR Average (mean of Min and Max PR) and PR After Procedure across these ReOxy sessions in 2-3 sentences. Focus on:
+        1. The recovery pattern shown by PR After Procedure compared to PR Average
+        2. What this indicates about the patient's cardiovascular adaptation to treatment
+
+        Sessions data:{''.join(sessions_data)}"""
+        
+        response = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.content[0].text
+    except Exception as e:
+        return f"Error analyzing PR trends: {str(e)}"
+
+def analyze_hypoxic_time(sorted_results):
+    try:
+        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        
+        sessions_data = []
+        for treatment_num, data in sorted_results.items():
+            sessions_data.append(f"""
+            Session {treatment_num}:
+            - Total Hypoxic Time: {data['total_hypoxic_time']}
+            - PR Elevation: {data['pr_elevation_percent']}%
+            - Min SpO2: {data['min_spo2_average']}
+            """)
+        
+        prompt = f"""Analyze the total hypoxic time trends across these ReOxy sessions in 2-3 sentences. Focus on:
+        1. Changes in hypoxic exposure duration
+        2. What this suggests about the patient's adaptation to hypoxic stress
+
+        Sessions data:{''.join(sessions_data)}"""
+        
+        response = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.content[0].text
+    except Exception as e:
+        return f"Error analyzing hypoxic time: {str(e)}"
 
 def main():
     st.set_page_config(layout="wide")
@@ -385,62 +549,78 @@ def main():
             # Add a separator before the table
             st.markdown("---")
             
-            # Continue with your existing table display code
-            st.subheader("Extracted Results")
-
-            # Create a table header
-            cols = st.columns(len(sorted_results) + 1)  # +1 for labels column
-
-            # Labels column
-            ## cols[0].write("Field")
-            for i, (treatment_num, data) in enumerate(sorted_results.items(), 1):
-                cols[i].write(f"Session {treatment_num}")
-
-            # Data rows
-            fields = [
-              ##  ('patient_name', 'Patient Name'),
-              ##  ('reference_number', 'Reference Number'),
-              ##  ('sex', 'Sex'),
-              ##  ('date_of_birth', 'Date of Birth'),
-                ('treatment_date', 'Treatment Date'),
-                ('total_duration', 'Total Duration'),
-                ('total_hypoxic_time', 'Total Hypoxic Time'),
-                ('adjustment_time', 'Adjustment Time'),
-                ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
-                ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
-                ('min_spo2_average', 'Min SpO2 Average'),
-                ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
-                ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
-                ('max_spo2_average', 'Max SpO2 Average'),
-                ('baseline_pr', 'Baseline PR'),
-                ('min_pr_average', 'Min PR Average'),
-                ('max_pr_average', 'Max PR Average'),
-                ('pr_after_procedure', 'PR After Procedure'),
-                ('pr_elevation_bpm', 'PR Elevation (BPM)'),
-                ('pr_elevation_percent', 'PR Elevation (%)')
-            ]
-
-            # Create rows
-            for field_key, field_label in fields:
-                cols = st.columns(len(sorted_results) + 1)
-                cols[0].write(field_label)
-                for i, data in enumerate(sorted_results.values(), 1):
-                    cols[i].write(data[field_key])
-
-            # Add charts section
-            st.markdown("---")
+                  # Add charts section
+ 
             st.subheader("Treatment Progress Charts")
             
             if len(sorted_results) > 1:  # Only show charts if there are multiple sessions
-                fig_spo2, fig_pr, fig_duration = create_charts(sorted_results)
+                fig_pr_comparison, fig_phases, fig_hypoxic_time = create_charts(sorted_results)
                 
-                # Display charts in columns
+                # Display phase duration chart and analysis
                 chart_col1, chart_col2 = st.columns(2)
                 with chart_col1:
-                    st.plotly_chart(fig_spo2, use_container_width=True)
-                    st.plotly_chart(fig_duration, use_container_width=True)
+                    st.plotly_chart(fig_phases, use_container_width=True, key="phase_duration_chart")
                 with chart_col2:
-                    st.plotly_chart(fig_pr, use_container_width=True)
+                    st.write("**Phase Duration Analysis:**")
+                    phase_analysis = analyze_hyperoxic_duration(sorted_results)
+                    st.write(phase_analysis)
+                
+                # Display PR comparison and analysis
+                pr_col1, pr_col2 = st.columns(2)
+                with pr_col1:
+                    st.plotly_chart(fig_pr_comparison, use_container_width=True, key="pr_comparison_chart")
+                with pr_col2:
+                    st.write("**Pulse Rate Analysis:**")
+                    pr_analysis = analyze_pr_trends(sorted_results)
+                    st.write(pr_analysis)
+                
+                # Display Total Hypoxic Time chart and analysis
+                hypoxic_col1, hypoxic_col2 = st.columns(2)
+                with hypoxic_col1:
+                    st.plotly_chart(fig_hypoxic_time, use_container_width=True, key="hypoxic_time_chart")
+                with hypoxic_col2:
+                    st.write("**Total Hypoxic Time Analysis:**")
+                    hypoxic_analysis = analyze_hypoxic_time(sorted_results)
+                    st.write(hypoxic_analysis)
+                
+                # Add a separator before the extracted results
+                st.markdown("---")
+                
+                # Display extracted results in an expander
+                with st.expander("Extracted Results", expanded=False):
+                    # Create a table header
+                    cols = st.columns(len(sorted_results) + 1)  # +1 for labels column
+                    
+                    # Labels column
+                    for i, (treatment_num, data) in enumerate(sorted_results.items(), 1):
+                        cols[i].write(f"Session {treatment_num}")
+                    
+                    # Data rows
+                    fields = [
+                        ('treatment_date', 'Treatment Date'),
+                        ('total_duration', 'Total Duration'),
+                        ('total_hypoxic_time', 'Total Hypoxic Time'),
+                        ('adjustment_time', 'Adjustment Time'),
+                        ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
+                        ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
+                        ('min_spo2_average', 'Min SpO2 Average'),
+                        ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
+                        ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
+                        ('max_spo2_average', 'Max SpO2 Average'),
+                        ('baseline_pr', 'Baseline PR'),
+                        ('min_pr_average', 'Min PR Average'),
+                        ('max_pr_average', 'Max PR Average'),
+                        ('pr_after_procedure', 'PR After Procedure'),
+                        ('pr_elevation_bpm', 'PR Elevation (BPM)'),
+                        ('pr_elevation_percent', 'PR Elevation (%)')
+                    ]
+                    
+                    # Create rows
+                    for field_key, field_label in fields:
+                        cols = st.columns(len(sorted_results) + 1)
+                        cols[0].write(field_label)
+                        for i, data in enumerate(sorted_results.values(), 1):
+                            cols[i].write(data[field_key])
             else:
                 st.write("Upload multiple sessions to see progress charts")
 
