@@ -464,11 +464,48 @@ def analyze_hypoxic_time(sorted_results):
     except Exception as e:
         return f"Error analyzing hypoxic time: {str(e)}"
 
+def analyze_case_history(case_history, sorted_results):
+    try:
+        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        
+        # Get the latest session data
+        latest_session = sorted_results[max(sorted_results.keys())]
+        
+        prompt = f"""Based on the patient's case history and ReOxy treatment results, identify key correlations and relevant clinical insights in 2-3 sentences.
+
+        Case History:
+        {case_history}
+
+        Treatment Data:
+        - Sessions: {len(sorted_results)}
+        - Latest PR Elevation: {latest_session['pr_elevation_percent']}%
+        - Latest SpO2 Range: {latest_session['min_spo2_average']} - {latest_session['max_spo2_average']}
+        """
+        
+        response = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=200,  # Reduced token limit for more concise response
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.content[0].text
+    except Exception as e:
+        return f"Error analyzing case history: {str(e)}"
+
 def main():
     st.set_page_config(layout="wide")
     
     st.title("ReOxy Reports Interpreter")
-        
+    
+    # Add case history text area
+    case_history = st.text_area(
+        "Patient Case History",
+        height=150,
+        help="Enter relevant patient history, conditions, medications, and other clinical notes"
+    )
+    
+    # Add a separator
+    st.markdown("---")
+    
     # Changed order to make Claude the default
     ai_model = st.sidebar.selectbox(
         "Select AI Model",
@@ -573,6 +610,12 @@ def main():
                 st.write(f"**Patient Name:** {first_patient['patient_name']}")
                 st.write(f"**Date of Birth:** {first_patient['date_of_birth']}")
                 st.write(f"**Sex:** {first_patient['sex']}")
+                
+                # Add case history analysis if text was entered
+                if case_history.strip():
+                    st.subheader("Case History Analysis")
+                    history_analysis = analyze_case_history(case_history, sorted_results)
+                    st.write(history_analysis)
                 
                 # Add a separator
                 st.markdown("---")
