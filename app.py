@@ -14,6 +14,9 @@ import anthropic
 # Load environment variables
 load_dotenv()
 
+# Move this outside and before the main() function
+st.set_page_config(layout="wide")
+
 def extract_text_from_pdf(pdf_file):
     try:
         # Reset file pointer to the beginning
@@ -492,8 +495,119 @@ def analyze_case_history(case_history, sorted_results):
         return f"Error analyzing case history: {str(e)}"
 
 def main():
-    st.set_page_config(layout="wide")
-    
+    # Custom CSS for print styling
+    st.markdown("""
+        <style>
+            @media print {
+                /* Hide Streamlit UI elements */
+                .stButton, .stDownloadButton, 
+                .stSelectbox, .stTextArea,
+                header, footer, .streamlit-expanderHeader {
+                    display: none !important;
+                }
+                
+                /* Hide sidebar completely */
+                [data-testid="stSidebar"] {
+                    display: none !important;
+                }
+                
+                /* Hide file uploader and related elements */
+                .stFileUploader, 
+                [data-testid="stFileUploader"],
+                .uploadedFiles {
+                    display: none !important;
+                }
+                
+                /* Hide Streamlit default elements */
+                #MainMenu, .stDeployButton {
+                    display: none !important;
+                }
+                
+                /* Force page breaks */
+                .page-break {
+                    page-break-before: always;
+                }
+                
+                /* Keep elements together */
+                .keep-together {
+                    page-break-inside: avoid;
+                }
+                
+                /* Adjust margins and paper size */
+                @page {
+                    size: A4;
+                    margin: 2cm;
+                }
+                
+                /* Adjust content width without sidebar */
+                .main .block-container {
+                    max-width: 100% !important;
+                    padding-left: 5% !important;
+                    padding-right: 5% !important;
+                }
+                
+                /* Ensure charts are sized appropriately */
+                .plotly-graph-div {
+                    max-width: 100% !important;
+                    height: auto !important;
+                }
+                
+                /* Font sizes for different elements */
+                h1, .stTitle {
+                    font-size: 28pt !important;
+                    margin-bottom: 15pt !important;
+                }
+                
+                h2, .stSubheader {
+                    font-size: 20pt !important;
+                    margin-bottom: 12pt !important;
+                }
+                
+                h3 {
+                    font-size: 16pt !important;
+                    margin-bottom: 10pt !important;
+                }
+                
+                p, div, li, td {
+                    font-size: 14pt !important;
+                    line-height: 1.4 !important;
+                }
+                
+                /* Analysis text */
+                .element-container div.stMarkdown p {
+                    font-size: 14pt !important;
+                    line-height: 1.4 !important;
+                }
+                
+                /* Chart titles and labels */
+                .js-plotly-plot .plotly .gtitle {
+                    font-size: 14pt !important;
+                }
+                
+                .js-plotly-plot .plotly .xtitle,
+                .js-plotly-plot .plotly .ytitle {
+                    font-size: 14pt !important;
+                }
+                
+                .js-plotly-plot .plotly .xtick text,
+                .js-plotly-plot .plotly .ytick text {
+                    font-size: 12pt !important;
+                }
+                
+                /* Table text */
+                table {
+                    font-size: 13pt !important;
+                }
+                
+                /* Keep consistent margins */
+                .block-container {
+                    padding-top: 20pt !important;
+                    padding-bottom: 20pt !important;
+                }
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.title("ReOxy Reports Interpreter")
     
     # Add case history text area
@@ -620,28 +734,26 @@ def main():
                 # Add a separator
                 st.markdown("---")
                 
-                # Keep two columns
-                col1, col2 = st.columns(2)
+                # Replace the two-column layout with stacked sections
+                st.subheader("Session Comparison")
+                if len(sorted_results) > 1:
+                    comparison = compare_sessions_claude(sorted_results) if ai_model == "Claude 3 Sonnet" else compare_sessions_openai(sorted_results)
+                    st.write(comparison)
+                else:
+                    st.write("Upload multiple sessions to see comparison")
                 
-                with col1:
-                    st.subheader("Session Comparison")
-                    if len(sorted_results) > 1:
-                        comparison = compare_sessions_claude(sorted_results) if ai_model == "Claude 3 Sonnet" else compare_sessions_openai(sorted_results)
-                        st.write(comparison)
-                    else:
-                        st.write("Upload multiple sessions to see comparison")
-                
-                with col2:
-                    st.subheader("Treatment Recommendations")
-                    latest_session = sorted_results[max(sorted_results.keys())]
-                    recommendations = generate_recommendations_claude(latest_session) if ai_model == "Claude 3 Sonnet" else generate_recommendations(latest_session)
-                    st.write(recommendations)
-                
-                # Add a separator before the table
+                # Add a separator between sections
                 st.markdown("---")
                 
-                  # Add charts section
- 
+                st.subheader("Treatment Recommendations")
+                latest_session = sorted_results[max(sorted_results.keys())]
+                recommendations = generate_recommendations_claude(latest_session) if ai_model == "Claude 3 Sonnet" else generate_recommendations(latest_session)
+                st.write(recommendations)
+                
+                # Add a separator before the charts section
+                st.markdown("---")
+                
+                # Add charts section
                 st.subheader("Treatment Progress Charts")
                 
                 if len(sorted_results) > 1:  # Only show charts if there are multiple sessions
