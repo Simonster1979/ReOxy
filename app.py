@@ -50,7 +50,11 @@ def extract_text_from_pdf(pdf_file):
             'max_pr_average': '',
             'pr_after_procedure': '',
             'pr_elevation_bpm': '',
-            'pr_elevation_percent': ''
+            'pr_elevation_percent': '',
+            
+            # Add new fields for blood pressure
+            'bp_before_procedure': '',
+            'bp_after_procedure': '',
         }
         
         for page in pdf.pages:
@@ -62,6 +66,7 @@ def extract_text_from_pdf(pdf_file):
             )
             
             word_list = [w['text'].strip() for w in words]
+            print(word_list)  # or st.write(word_list)
 
             
             
@@ -112,6 +117,12 @@ def extract_text_from_pdf(pdf_file):
                     patient_data['pr_elevation_bpm'] = word_list[66]  # "13,00"
                 elif word == "PR elevation (%)":
                     patient_data['pr_elevation_percent'] = word_list[67]  # "18,31"
+                
+                # Add extraction for BP before and after procedure
+                elif word == "BP before procedure":
+                    patient_data['bp_before_procedure'] = word_list[71]  # Adjust index as needed
+                elif word == "BP after procedure":
+                    patient_data['bp_after_procedure'] = word_list[72]  # Adjust index as needed
         
         pdf.close()
         
@@ -139,7 +150,9 @@ def extract_text_from_pdf(pdf_file):
             f"Max PR Average: {patient_data['max_pr_average']}",
             f"PR After Procedure: {patient_data['pr_after_procedure']}",
             f"PR Elevation (BPM): {patient_data['pr_elevation_bpm']}",
-            f"PR Elevation (%): {patient_data['pr_elevation_percent']}"
+            f"PR Elevation (%): {patient_data['pr_elevation_percent']}",
+            f"BP Before Procedure: {patient_data['bp_before_procedure']}",
+            f"BP After Procedure: {patient_data['bp_after_procedure']}"
         ]
         
         return formatted_output, patient_data
@@ -154,6 +167,10 @@ def compare_sessions_openai(sorted_results):
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         sessions_data = []
         for treatment_num, data in sorted_results.items():
+            # Convert BP values to display format
+            bp_before = 'N/A' if data['bp_before_procedure'] == '---' else data['bp_before_procedure']
+            bp_after = 'N/A' if data['bp_after_procedure'] == '---' else data['bp_after_procedure']
+            
             sessions_data.append(f"""
             Session {treatment_num}:
             Adaptive Response Metrics:
@@ -163,16 +180,20 @@ def compare_sessions_openai(sorted_results):
             - Min SpO2: {data['min_spo2_average']}
             - Max SpO2: {data['max_spo2_average']}
             - Total Hypoxic Time: {data['total_hypoxic_time']}
+            Blood Pressure Response:
+            - BP Before: {bp_before}
+            - BP After: {bp_after}
             """)
         
         prompt = f"""Analyze the adaptive response changes between these ReOxy sessions. Focus on:
         1. Heart rate adaptation trends
         2. SpO2 tolerance improvements
         3. Changes in hypoxic exposure tolerance
+        4. Blood pressure response patterns
         
         Sessions:{''.join(sessions_data)}
         
-        Highlight key improvements in physiological adaptation between sessions."""
+        Highlight key improvements in physiological adaptation between sessions, including cardiovascular responses shown by both heart rate and blood pressure changes."""
         
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -317,7 +338,15 @@ def create_charts(sorted_results):
     fig_pr_comparison.update_layout(
         title='Pulse Rate Trends Across Sessions',
         xaxis_title='Session Number',
-        yaxis_title='Pulse Rate (bpm)'
+        yaxis_title='Pulse Rate (bpm)',
+        legend=dict(
+            orientation="h",  # horizontal orientation
+            yanchor="bottom",
+            y=-0.3,  # position below chart
+            xanchor="center",
+            x=0.5,
+            font=dict(size=12)
+        )
     )
     
     # Process both hyperoxic and hypoxic duration data
@@ -352,7 +381,15 @@ def create_charts(sorted_results):
     fig_phases.update_layout(
         title='Hyperoxic/Hypoxic Phase Durations Across Sessions',
         xaxis_title='Session Number',
-        yaxis_title='Duration (minutes)'
+        yaxis_title='Duration (minutes)',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.3,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=12)
+        )
     )
     
     # Total Hypoxic Time Chart
@@ -372,10 +409,75 @@ def create_charts(sorted_results):
     fig_hypoxic_time.update_layout(
         title='Total Hypoxic Time Across Sessions',
         xaxis_title='Session Number',
-        yaxis_title='Duration (minutes)'
+        yaxis_title='Duration (minutes)',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.3,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=12)
+        )
     )
     
-    return fig_pr_comparison, fig_phases, fig_hypoxic_time
+    # New lists for BP values
+    bp_before = []
+    bp_after = []
+    
+    for data in sorted_results.values():
+        bp_before.append(data['bp_before_procedure'])
+        bp_after.append(data['bp_after_procedure'])
+    
+    # Convert BP values to numeric, handling various invalid values
+    def convert_bp(bp_str):
+        if bp_str in ["N/A", "---", "", None]:
+            return None
+        try:
+            return float(bp_str.split(' ')[0])
+        except (ValueError, AttributeError, IndexError):
+            return None
+    
+    bp_before_numeric = [convert_bp(bp) for bp in bp_before]
+    bp_after_numeric = [convert_bp(bp) for bp in bp_after]
+    
+    # BP Comparison Chart
+    fig_bp_comparison = go.Figure()
+    fig_bp_comparison.add_trace(go.Scatter(
+        x=treatment_numbers,
+        y=bp_before_numeric,
+        name='BP Before Procedure',
+        mode='lines+markers',
+        connectgaps=True  # This will connect lines across missing values
+    ))
+    fig_bp_comparison.add_trace(go.Scatter(
+        x=treatment_numbers,
+        y=bp_after_numeric,
+        name='BP After Procedure',
+        mode='lines+markers',
+        connectgaps=True
+    ))
+    fig_bp_comparison.update_layout(
+        title='Blood Pressure Trends Across Sessions',
+        xaxis_title='Session Number',
+        yaxis_title='Blood Pressure (mmHg)',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.3,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=12)
+        )
+    )
+    
+    # Add margin to all charts to accommodate legend
+    for fig in [fig_pr_comparison, fig_phases, fig_hypoxic_time, fig_bp_comparison]:
+        fig.update_layout(
+            margin=dict(t=50, l=50, r=50, b=100),  # increase bottom margin
+            height=500  # adjust height to accommodate legend
+        )
+    
+    return fig_pr_comparison, fig_phases, fig_hypoxic_time, fig_bp_comparison
 
 def analyze_hyperoxic_duration(sorted_results):
     try:
@@ -494,43 +596,60 @@ def analyze_case_history(case_history, sorted_results):
     except Exception as e:
         return f"Error analyzing case history: {str(e)}"
 
+def analyze_bp_trends(sorted_results):
+    try:
+        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        
+        sessions_data = []
+        for treatment_num, data in sorted_results.items():
+            # Only include BP data if it's valid
+            if data['bp_before_procedure'] not in ["N/A", "---", ""]:
+                sessions_data.append(f"""
+                Session {treatment_num}:
+                - BP Before: {data['bp_before_procedure']}
+                - BP After: {data['bp_after_procedure']}
+                - PR Elevation: {data['pr_elevation_percent']}%
+                - Total Hypoxic Time: {data['total_hypoxic_time']}
+                """)
+        
+        if not sessions_data:
+            return "Insufficient blood pressure data available for analysis."
+        
+        prompt = f"""Analyze the blood pressure response across these ReOxy sessions in 2-3 sentences. Focus on:
+        1. The acute BP response to each session (before vs after)
+        2. The overall trend across sessions and what this suggests about cardiovascular adaptation
+
+        Sessions data:{''.join(sessions_data)}"""
+        
+        response = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.content[0].text
+    except Exception as e:
+        return f"Error analyzing BP trends: {str(e)}"
+
 def main():
     # Custom CSS for print styling
     st.markdown("""
         <style>
             @media print {
-                /* Hide Streamlit UI elements */
-                .stButton, .stDownloadButton, 
-                .stSelectbox, .stTextArea,
-                header, footer, .streamlit-expanderHeader {
-                    display: none !important;
+                /* Keep charts together */
+                .element-container {
+                    break-inside: avoid !important;
                 }
                 
-                /* Hide sidebar completely */
-                [data-testid="stSidebar"] {
-                    display: none !important;
+                /* Ensure charts fit within page */
+                .js-plotly-plot, .plotly {
+                    max-height: 400px !important;
+                    margin-bottom: 20px !important;
+                    break-inside: avoid !important;
                 }
                 
-                /* Hide file uploader and related elements */
-                .stFileUploader, 
-                [data-testid="stFileUploader"],
-                .uploadedFiles {
-                    display: none !important;
-                }
-                
-                /* Hide Streamlit default elements */
-                #MainMenu, .stDeployButton {
-                    display: none !important;
-                }
-                
-                /* Force page breaks */
-                .page-break {
-                    page-break-before: always;
-                }
-                
-                /* Keep elements together */
-                .keep-together {
-                    page-break-inside: avoid;
+                /* Keep text with charts */
+                .stMarkdown {
+                    break-inside: avoid !important;
                 }
                 
                 /* Adjust margins and paper size */
@@ -539,70 +658,92 @@ def main():
                     margin: 2cm;
                 }
                 
-                /* Adjust content width without sidebar */
-                .main .block-container {
-                    max-width: 100% !important;
-                    padding-left: 5% !important;
-                    padding-right: 5% !important;
+                /* Hide Streamlit components during print */
+                .stButton, .stDownloadButton, header, footer {
+                    display: none !important;
                 }
                 
-                /* Ensure charts are sized appropriately */
-                .plotly-graph-div {
-                    max-width: 100% !important;
-                    height: auto !important;
+                /* Hide file uploader components */
+                .stFileUploader, [data-testid="stFileUploader"] {
+                    display: none !important;
                 }
                 
-                /* Font sizes for different elements */
-                h1, .stTitle {
-                    font-size: 28pt !important;
-                    margin-bottom: 15pt !important;
+                /* Hide the file list */
+                [data-testid="stFileUploadDropzone"] {
+                    display: none !important;
                 }
                 
-                h2, .stSubheader {
+                /* Hide pagination */
+                .css-1p1nwyz {
+                    display: none !important;
+                }
+
+                /* Hide sidebar */
+                [data-testid="stSidebar"] {
+                    display: none !important;
+                }
+                
+                section[data-testid="stSidebarContent"] {
+                    display: none !important;
+                }
+                
+                .css-1d391kg {
+                    display: none !important;
+            }
+                
+                            /* Hide Extracted Results section */
+                [data-testid="stExpander"] {
+                    display: none !important;
+                }
+                
+                .streamlit-expanderHeader {
+                    display: none !important;
+                }
+                
+                /* Hide the download button */
+                .stDownloadButton {
+                    display: none !important;
+                }
+            
+                
+                   /* Increase font sizes for print */
+                h1 {
+                    font-size: 32pt !important;
+                }
+                
+                h2, h3, .stSubheader {
+                    font-size: 26pt !important;
+                }
+                
+                p, div, span {
                     font-size: 20pt !important;
-                    margin-bottom: 12pt !important;
                 }
                 
-                h3 {
-                    font-size: 16pt !important;
-                    margin-bottom: 10pt !important;
-                }
-                
-                p, div, li, td {
-                    font-size: 14pt !important;
+                /* Make analysis text larger */
+                .stMarkdown p {
+                    font-size: 20pt !important;
                     line-height: 1.4 !important;
                 }
                 
-                /* Analysis text */
-                .element-container div.stMarkdown p {
-                    font-size: 14pt !important;
-                    line-height: 1.4 !important;
-                }
-                
-                /* Chart titles and labels */
-                .js-plotly-plot .plotly .gtitle {
+                /* Make chart titles and labels larger */
+                .js-plotly-plot .plotly text {
                     font-size: 14pt !important;
                 }
                 
-                .js-plotly-plot .plotly .xtitle,
-                .js-plotly-plot .plotly .ytitle {
+                /* Make table text larger */
+                .element-container div {
                     font-size: 14pt !important;
                 }
                 
-                .js-plotly-plot .plotly .xtick text,
-                .js-plotly-plot .plotly .ytick text {
-                    font-size: 12pt !important;
+                /* Bold headers and labels */
+                strong, b {
+                    font-size: 22pt !important;
+                    font-weight: bold !important;
                 }
                 
-                /* Table text */
-                table {
-                    font-size: 13pt !important;
-                }
-                
-                /* Keep consistent margins */
-                .block-container {
-                    padding-top: 20pt !important;
-                    padding-bottom: 20pt !important;
+                /* Increase spacing between sections */
+                .element-container {
+                    margin-bottom: 20px !important;
                 }
             }
         </style>
@@ -757,7 +898,7 @@ def main():
                 st.subheader("Treatment Progress Charts")
                 
                 if len(sorted_results) > 1:  # Only show charts if there are multiple sessions
-                    fig_pr_comparison, fig_phases, fig_hypoxic_time = create_charts(sorted_results)
+                    fig_pr_comparison, fig_phases, fig_hypoxic_time, fig_bp_comparison = create_charts(sorted_results)
                     
                     # Display phase duration chart and analysis
                     chart_col1, chart_col2 = st.columns(2)
@@ -785,6 +926,15 @@ def main():
                         st.write("**Total Hypoxic Time Analysis:**")
                         hypoxic_analysis = analyze_hypoxic_time(sorted_results)
                         st.write(hypoxic_analysis)
+                    
+                    # Add BP comparison chart and analysis
+                    bp_col1, bp_col2 = st.columns(2)
+                    with bp_col1:
+                        st.plotly_chart(fig_bp_comparison, use_container_width=True, key="bp_comparison_chart")
+                    with bp_col2:
+                        st.write("**Blood Pressure Analysis:**")
+                        bp_analysis = analyze_bp_trends(sorted_results)
+                        st.write(bp_analysis)
                     
                     # Add a separator before the extracted results
                     st.markdown("---")
@@ -815,7 +965,9 @@ def main():
                             ('max_pr_average', 'Max PR Average'),
                             ('pr_after_procedure', 'PR After Procedure'),
                             ('pr_elevation_bpm', 'PR Elevation (BPM)'),
-                            ('pr_elevation_percent', 'PR Elevation (%)')
+                            ('pr_elevation_percent', 'PR Elevation (%)'),
+                            ('bp_before_procedure', 'BP Before Procedure'),
+                            ('bp_after_procedure', 'BP After Procedure')
                         ]
                         
                         # Create rows
@@ -823,7 +975,13 @@ def main():
                             cols = st.columns(len(sorted_results) + 1)
                             cols[0].write(field_label)
                             for i, data in enumerate(sorted_results.values(), 1):
-                                cols[i].write(data[field_key])
+                                # Special handling for BP values
+                                if field_key in ['bp_before_procedure', 'bp_after_procedure']:
+                                    value = data[field_key]
+                                    display_value = 'N/A' if value == '---' else value
+                                    cols[i].write(display_value)
+                                else:
+                                    cols[i].write(data[field_key])
                 else:
                     st.write("Upload multiple sessions to see progress charts")
 
