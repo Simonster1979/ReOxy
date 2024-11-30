@@ -14,6 +14,9 @@ import anthropic
 # Load environment variables
 load_dotenv()
 
+# Move this outside and before the main() function
+st.set_page_config(layout="wide")
+
 def extract_text_from_pdf(pdf_file):
     try:
         # Reset file pointer to the beginning
@@ -752,8 +755,7 @@ def main():
     case_history = st.text_area(
         "Patient Case History",
         height=150,
-        help="Enter relevant patient history, conditions, medications, and other clinical notes",
-        key="reoxy_case_history"
+        help="Enter relevant patient history, conditions, medications, and other clinical notes"
     )
     
     # Add a separator
@@ -762,7 +764,7 @@ def main():
     # Changed order to make Claude the default
     ai_model = st.sidebar.selectbox(
         "Select AI Model",
-        ["OpenAI GPT-3.5", "Claude 3 Sonnet"]
+        ["Claude 3 Sonnet", "OpenAI GPT-3.5"]
     )
     
     # Initialize session state for uploaded files
@@ -774,7 +776,7 @@ def main():
         "Choose PDF files", 
         type="pdf", 
         accept_multiple_files=True,
-        key='reoxy_pdf_uploader'
+        key='pdf_uploader'
     )
     
     # Only show clear button if there are files uploaded
