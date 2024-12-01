@@ -534,6 +534,48 @@ def generate_recommendations_openai(analysis_data):
     except Exception as e:
         return f"Error generating recommendations: {str(e)}"
 
+def validate_course_report_pdf(pdf_data):
+    """
+    Validate if the uploaded PDF is a valid Course Report
+    
+    Args:
+        pdf_data: Dictionary containing extracted PDF data
+        
+    Returns:
+        tuple: (is_valid: bool, error_message: str)
+    """
+    # Required fields that should be present in a valid Course Report
+    required_fields = [
+        ('patient_name', 'Patient Name'),
+        ('sex', 'Sex'),
+        ('dob', 'Date of Birth'),
+        ('treatments', 'Treatment Data')
+    ]
+    
+    # Check for required fields
+    for field, display_name in required_fields:
+        if not pdf_data.get(field):
+            return False, f"Missing {display_name}. This does not appear to be a valid Course Report PDF."
+    
+    # Check if treatments data exists and has expected fields
+    if not pdf_data['treatments']:
+        return False, "No treatment data found. This does not appear to be a valid Course Report PDF."
+    
+    # Check for expected treatment data fields in first treatment
+    first_treatment = next(iter(pdf_data['treatments'].values()))
+    expected_fields = [
+        'Min SpO2 Av. (%)',
+        'Max SpO2 Av. (%)',
+        'Number of cycles',
+        'Procedure duration (min:sec)'
+    ]
+    
+    missing_fields = [field for field in expected_fields if field not in first_treatment]
+    if missing_fields:
+        return False, f"Missing required treatment data: {', '.join(missing_fields)}. This does not appear to be a valid Course Report PDF."
+    
+    return True, ""
+
 def main():
     # Add AI model selector to sidebar
     ai_model = st.sidebar.selectbox(
@@ -759,525 +801,545 @@ def main():
     )
     
     if uploaded_file:
-        # Only extract data if it hasn't been extracted yet
-        if st.session_state.course_data is None:
-            with st.spinner('Loading report...'):
-                try:
-                    st.session_state.course_data = extract_course_report(uploaded_file)
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
+        try:
+            with st.spinner('Validating and loading report...'):
+                course_data = extract_course_report(uploaded_file)
+                is_valid, error_message = validate_course_report_pdf(course_data)
+                
+                if not is_valid:
+                    st.error(error_message)
+                    st.error("Please upload a valid ReOxy Course Report PDF.")
                     return
+                
+                st.session_state.course_data = course_data
+                
+        except Exception as e:
+            st.error(f"Error processing PDF: {str(e)}")
+            st.error("Please ensure you are uploading a valid ReOxy Course Report PDF.")
+            return
+    
+    if st.session_state.course_data:
+        treatment_numbers = sorted(st.session_state.course_data['treatments'].keys())
         
-        if st.session_state.course_data:
-            treatment_numbers = sorted(st.session_state.course_data['treatments'].keys())
-            
-            # Create a container for the selection interface
-            selection_container = st.container()
-            with selection_container:
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.subheader("Select Treatments")
-                with col2:
-                    st.write(f"Found: {len(treatment_numbers)}")
-            
-            # Create columns for inline checkboxes (more columns for denser layout)
-            num_cols = min(len(treatment_numbers), 8)  # Increased to 8 columns
-            cols = st.columns(num_cols)
-            
-            # Update selected treatments without triggering analysis
-            current_selections = []
-            for i, treatment_num in enumerate(treatment_numbers):
-                col_idx = i % num_cols
-                if cols[col_idx].checkbox(str(treatment_num), 
-                                        value=treatment_num in st.session_state.selected_treatments, 
-                                        key=f"treatment_{treatment_num}",
-                                        label_visibility="visible"):
-                    current_selections.append(treatment_num)
-            
-            # Update selections in session state
+        # Create a container for the selection interface
+        selection_container = st.container()
+        with selection_container:
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            with col1:
+                st.subheader("Select Treatments")
+            with col2:
+                st.write(f"Found: {len(treatment_numbers)} Treatments")
+            with col3:
+                if st.button("Select All"):
+                    st.session_state.selected_treatments = treatment_numbers.copy()
+                    st.session_state.show_analysis = False  # Prevent auto-processing
+                    st.rerun()
+            with col4:
+                if st.button("Deselect All"):
+                    st.session_state.selected_treatments = []
+                    st.session_state.show_analysis = False  # Prevent auto-processing
+                    st.rerun()
+        
+        # Create columns for inline checkboxes
+        num_cols = min(len(treatment_numbers), 8)
+        cols = st.columns(num_cols)
+        
+        # Update selected treatments without triggering analysis
+        current_selections = []
+        for i, treatment_num in enumerate(treatment_numbers):
+            col_idx = i % num_cols
+            if cols[col_idx].checkbox(str(treatment_num), 
+                                    value=treatment_num in st.session_state.selected_treatments, 
+                                    key=f"treatment_{treatment_num}",
+                                    label_visibility="visible"):
+                current_selections.append(treatment_num)
+        
+        # Update selections in session state without triggering analysis
+        if st.session_state.selected_treatments != current_selections:
             st.session_state.selected_treatments = current_selections
-            
-            # Add analyze button
-            st.button("Process Selected Treatments", 
-                     disabled=len(st.session_state.selected_treatments) == 0,
-                     key="analyze_button",
-                     on_click=lambda: setattr(st.session_state, 'show_analysis', True) or 
-                                    setattr(st.session_state, 'analyzed_treatments', 
-                                    st.session_state.selected_treatments.copy()))
-            
-            # Show analysis only if button was clicked and using the analyzed treatments
-            if st.session_state.show_analysis and st.session_state.analyzed_treatments:
+            st.session_state.show_analysis = False  # Reset analysis state when selection changes
+        
+        # Add analyze button
+        st.button("Process Selected Treatments", 
+                 disabled=len(st.session_state.selected_treatments) == 0,
+                 key="analyze_button",
+                 on_click=lambda: setattr(st.session_state, 'show_analysis', True) or 
+                                setattr(st.session_state, 'analyzed_treatments', 
+                                st.session_state.selected_treatments.copy()))
+        
+        # Show analysis only if button was clicked and using the analyzed treatments
+        if st.session_state.show_analysis and st.session_state.analyzed_treatments:
+            st.markdown("---")
+            with st.spinner('Processing selected treatments...'):
+                # Filter course_data to only include analyzed treatments
+                filtered_treatments = {k: v for k, v in st.session_state.course_data['treatments'].items() 
+                                    if k in st.session_state.analyzed_treatments}
+                analysis_data = st.session_state.course_data.copy()
+                analysis_data['treatments'] = filtered_treatments
+                
+                # Display patient information first
+                st.subheader("Patient Information")
+                st.write(f"**Patient Name:** {analysis_data['patient_name']}")
+                st.write(f"**Date of Birth:** {analysis_data['dob']}")
+                st.write(f"**Sex:** {analysis_data['sex']}")
+                
+                # Add case history analysis if text was entered
+                if case_history.strip():
+                    st.subheader("Case History Analysis")
+                    with st.spinner('Analyzing case history...'):
+                        history_analysis = analyze_case_history(case_history, analysis_data)
+                        st.write(history_analysis)
+                
+                # Add a separator
                 st.markdown("---")
-                with st.spinner('Processing selected treatments...'):
-                    # Filter course_data to only include analyzed treatments
-                    filtered_treatments = {k: v for k, v in st.session_state.course_data['treatments'].items() 
-                                        if k in st.session_state.analyzed_treatments}
-                    analysis_data = st.session_state.course_data.copy()
-                    analysis_data['treatments'] = filtered_treatments
+                
+                # Session comparison
+                if len(filtered_treatments) > 1:
+                    st.subheader("Session Comparison")
+                    with st.spinner('Analyzing treatment sessions...'):
+                        comparison = compare_sessions_openai(analysis_data) if ai_model == "OpenAI GPT-3.5" else compare_sessions(analysis_data)
+                        st.write(comparison)
+                
+                # Treatment recommendations
+                st.subheader("Treatment Recommendations")
+                with st.spinner('Generating treatment recommendations...'):
+                    recommendations = generate_recommendations_openai(analysis_data) if ai_model == "OpenAI GPT-3.5" else generate_recommendations(analysis_data)
+                    st.write(recommendations)
+                
+                # Add a separator
+               # st.markdown("---")
+                
+                # Create DataFrame but hide the table display
+                df = pd.DataFrame.from_dict(analysis_data['treatments'], orient='index')
+                if analysis_data['schedule']:
+                    df['Date'] = df.index.map(lambda x: analysis_data['schedule'].get(x, ''))
+                    cols = ['Date'] + [col for col in df.columns if col != 'Date']
+                    df = df[cols]
+                
+                # Show comparison table (hidden but preserved in code)
+                if False:  # This condition makes the section never display but keeps the code
+                    st.subheader("Treatment Overview")
+                    st.dataframe(df)
+                
+                # Add Treatment Progress Charts section
+                st.markdown("---")
+                st.subheader("Treatment Progress Charts")
+                
+                if len(analysis_data['treatments']) > 1:  # Only show charts for multiple sessions
+                    # Create data for the phase duration chart
+                    treatment_nums = []
+                    hypoxic_durations = []
+                    hyperoxic_durations = []
                     
-                    # Display patient information first
-                    st.subheader("Patient Information")
-                    st.write(f"**Patient Name:** {analysis_data['patient_name']}")
-                    st.write(f"**Date of Birth:** {analysis_data['dob']}")
-                    st.write(f"**Sex:** {analysis_data['sex']}")
+                    for treatment_num, data in sorted(analysis_data['treatments'].items()):
+                        treatment_nums.append(treatment_num)
+                        
+                        # Process hypoxic duration
+                        hypo_str = data.get('Hypox. Phase dur. Av. (min:sec)', '0:00')
+                        hypo_min, hypo_sec = map(int, hypo_str.split(':'))
+                        hypoxic_durations.append(hypo_min + hypo_sec/60)
+                        
+                        # Process hyperoxic duration
+                        hyper_str = data.get('Hyperox. Phase dur. Av. (min:sec)', '0:00')
+                        hyper_min, hyper_sec = map(int, hyper_str.split(':'))
+                        hyperoxic_durations.append(hyper_min + hyper_sec/60)
                     
-                    # Add case history analysis if text was entered
-                    if case_history.strip():
-                        st.subheader("Case History Analysis")
-                        with st.spinner('Analyzing case history...'):
-                            history_analysis = analyze_case_history(case_history, analysis_data)
-                            st.write(history_analysis)
+                    # Create two columns for analysis and chart
+                    col1, col2 = st.columns([1, 2])
                     
-                    # Add a separator
-                    st.markdown("---")
+                    with col1:
+                        st.write("**Phase Duration Analysis:**")
+                        with st.spinner('Analyzing phase durations...'):
+                            phase_analysis = analyze_phase_durations(analysis_data)
+                            st.write(phase_analysis)
                     
-                    # Session comparison
-                    if len(filtered_treatments) > 1:
-                        st.subheader("Session Comparison")
-                        with st.spinner('Analyzing treatment sessions...'):
-                            comparison = compare_sessions_openai(analysis_data) if ai_model == "OpenAI GPT-3.5" else compare_sessions(analysis_data)
-                            st.write(comparison)
-                    
-                    # Treatment recommendations
-                    st.subheader("Treatment Recommendations")
-                    with st.spinner('Generating treatment recommendations...'):
-                        recommendations = generate_recommendations_openai(analysis_data) if ai_model == "OpenAI GPT-3.5" else generate_recommendations(analysis_data)
-                        st.write(recommendations)
-                    
-                    # Add a separator
-                   # st.markdown("---")
-                    
-                    # Create DataFrame but hide the table display
-                    df = pd.DataFrame.from_dict(analysis_data['treatments'], orient='index')
-                    if analysis_data['schedule']:
-                        df['Date'] = df.index.map(lambda x: analysis_data['schedule'].get(x, ''))
-                        cols = ['Date'] + [col for col in df.columns if col != 'Date']
-                        df = df[cols]
-                    
-                    # Show comparison table (hidden but preserved in code)
-                    if False:  # This condition makes the section never display but keeps the code
-                        st.subheader("Treatment Overview")
-                        st.dataframe(df)
-                    
-                    # Add Treatment Progress Charts section
-                    st.markdown("---")
-                    st.subheader("Treatment Progress Charts")
-                    
-                    if len(analysis_data['treatments']) > 1:  # Only show charts for multiple sessions
-                        # Create data for the phase duration chart
-                        treatment_nums = []
-                        hypoxic_durations = []
-                        hyperoxic_durations = []
+                    with col2:
+                        # Create phase duration chart
+                        fig = go.Figure()
                         
-                        for treatment_num, data in sorted(analysis_data['treatments'].items()):
-                            treatment_nums.append(treatment_num)
-                            
-                            # Process hypoxic duration
-                            hypo_str = data.get('Hypox. Phase dur. Av. (min:sec)', '0:00')
-                            hypo_min, hypo_sec = map(int, hypo_str.split(':'))
-                            hypoxic_durations.append(hypo_min + hypo_sec/60)
-                            
-                            # Process hyperoxic duration
-                            hyper_str = data.get('Hyperox. Phase dur. Av. (min:sec)', '0:00')
-                            hyper_min, hyper_sec = map(int, hyper_str.split(':'))
-                            hyperoxic_durations.append(hyper_min + hyper_sec/60)
+                        fig.add_trace(go.Scatter(
+                            x=treatment_nums,
+                            y=hyperoxic_durations,
+                            name='Hyperoxic Phase',
+                            mode='lines+markers'
+                        ))
                         
-                        # Create two columns for analysis and chart
-                        col1, col2 = st.columns([1, 2])
+                        fig.add_trace(go.Scatter(
+                            x=treatment_nums,
+                            y=hypoxic_durations,
+                            name='Hypoxic Phase',
+                            mode='lines+markers'
+                        ))
                         
-                        with col1:
-                            st.write("**Phase Duration Analysis:**")
-                            with st.spinner('Analyzing phase durations...'):
-                                phase_analysis = analyze_phase_durations(analysis_data)
-                                st.write(phase_analysis)
+                        fig.update_layout(
+                            title='Hyperoxic/Hypoxic Phase Durations Across Sessions',
+                            xaxis_title='Session Number',
+                            yaxis_title='Duration (minutes)',
+                            legend=dict(
+                                orientation="h",
+                                yanchor="bottom",
+                                y=-0.3,
+                                xanchor="center",
+                                x=0.5,
+                                font=dict(size=12)
+                            ),
+                            margin=dict(t=50, l=50, r=50, b=100),
+                            height=500
+                        )
                         
-                        with col2:
-                            # Create phase duration chart
-                            fig = go.Figure()
-                            
-                            fig.add_trace(go.Scatter(
-                                x=treatment_nums,
-                                y=hyperoxic_durations,
-                                name='Hyperoxic Phase',
-                                mode='lines+markers'
-                            ))
-                            
-                            fig.add_trace(go.Scatter(
-                                x=treatment_nums,
-                                y=hypoxic_durations,
-                                name='Hypoxic Phase',
-                                mode='lines+markers'
-                            ))
-                            
-                            fig.update_layout(
-                                title='Hyperoxic/Hypoxic Phase Durations Across Sessions',
-                                xaxis_title='Session Number',
-                                yaxis_title='Duration (minutes)',
-                                legend=dict(
-                                    orientation="h",
-                                    yanchor="bottom",
-                                    y=-0.3,
-                                    xanchor="center",
-                                    x=0.5,
-                                    font=dict(size=12)
-                                ),
-                                margin=dict(t=50, l=50, r=50, b=100),
-                                height=500
-                            )
-                            
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                        st.markdown("---")
-                        
-                        # Create data for the pulse rate chart
-                        min_pr_avg = []
-                        max_pr_avg = []
-                        
-                        for treatment_num, data in sorted(analysis_data['treatments'].items()):
-                            # Process min PR average
-                            min_pr_str = data.get('Min PR Av. (bpm)', '0')
-                            min_pr_avg.append(float(min_pr_str.split()[0]))
-                            
-                            # Process max PR average
-                            max_pr_str = data.get('Max PR Av. (bpm)', '0')
-                            max_pr_avg.append(float(max_pr_str.split()[0]))
-                        
-                        # Create two columns for analysis and chart
-                        col1, col2 = st.columns([1, 2])
-                        
-                        with col1:
-                            st.write("**Pulse Rate Analysis:**")
-                            with st.spinner('Analyzing pulse rate trends...'):
-                                pr_analysis = analyze_pulse_rate_trends(analysis_data)
-                                st.write(pr_analysis)
-                        
-                        with col2:
-                            # Create pulse rate chart
-                            fig_pr = go.Figure()
-                            
-                            fig_pr.add_trace(go.Scatter(
-                                x=treatment_nums,
-                                y=max_pr_avg,
-                                name='Max PR Average',
-                                mode='lines+markers'
-                            ))
-                            
-                            fig_pr.add_trace(go.Scatter(
-                                x=treatment_nums,
-                                y=min_pr_avg,
-                                name='Min PR Average',
-                                mode='lines+markers'
-                            ))
-                            
-                            fig_pr.update_layout(
-                                title='Pulse Rate Average Across Sessions',
-                                xaxis_title='Session Number',
-                                yaxis_title='Pulse Rate (bpm)',
-                                legend=dict(
-                                    orientation="h",
-                                    yanchor="bottom",
-                                    y=-0.3,
-                                    xanchor="center",
-                                    x=0.5,
-                                    font=dict(size=12)
-                                ),
-                                margin=dict(t=50, l=50, r=50, b=100),
-                                height=500
-                            )
-                            
-                            st.plotly_chart(fig_pr, use_container_width=True)
-                            
-                        st.markdown("---")
-                        
-                        # Create data for total hypoxic time chart
-                        total_hypoxic_times = []
-                        
-                        for treatment_num, data in sorted(analysis_data['treatments'].items()):
-                            try:
-                                # Calculate total hypoxic time
-                                hypoxic_dur = data.get('Hypox. Phase dur. Av. (min:sec)', '0:00')
-                                hypo_min, hypo_sec = map(int, hypoxic_dur.split(':'))
-                                total_seconds = hypo_min * 60 + hypo_sec
-                                
-                                cycles_str = data.get('Number of cycles', '0')
-                                num_cycles = int(cycles_str.split()[0])
-                                
-                                total_minutes = (total_seconds * num_cycles) / 60
-                                total_hypoxic_times.append(total_minutes)
-                            except (ValueError, IndexError):
-                                total_hypoxic_times.append(0)
-                        
-                        # Create two columns for analysis and chart
-                        col1, col2 = st.columns([1, 2])
-                        
-                        with col1:
-                            st.write("**Total Hypoxic Time Analysis:**")
-                            with st.spinner('Analyzing hypoxic time trends...'):
-                                hypoxic_time_analysis = analyze_total_hypoxic_time(analysis_data)
-                                st.write(hypoxic_time_analysis)
-                        
-                        with col2:
-                            # Create total hypoxic time chart
-                            fig_hypoxic = go.Figure()
-                            
-                            fig_hypoxic.add_trace(go.Scatter(
-                                x=treatment_nums,
-                                y=total_hypoxic_times,
-                                name='Total Hypoxic Time',
-                                mode='lines+markers'
-                            ))
-                            
-                            fig_hypoxic.update_layout(
-                                title='Total Hypoxic Time Across Sessions',
-                                xaxis_title='Session Number',
-                                yaxis_title='Duration (minutes)',
-                                legend=dict(
-                                    orientation="h",
-                                    yanchor="bottom",
-                                    y=-0.3,
-                                    xanchor="center",
-                                    x=0.5,
-                                    font=dict(size=12)
-                                ),
-                                margin=dict(t=50, l=50, r=50, b=100),
-                                height=500
-                            )
-                            
-                            st.plotly_chart(fig_hypoxic, use_container_width=True)
-                            
-                        st.markdown("---")
-                        
-                        # Create data for blood pressure chart
-                        bp_before = []
-                        bp_after = []
-                        
-                        for treatment_num, data in sorted(analysis_data['treatments'].items()):
-                            # Process BP before
-                            sys_before = data.get('BP SYS before (mmHg)', 'N/A')
-                            dia_before = data.get('BP DIA before (mmHg)', 'N/A')
-                            if sys_before != 'N/A' and dia_before != 'N/A':
-                                bp_before.append(f"{sys_before}/{dia_before}")
-                            else:
-                                bp_before.append(None)
-                            
-                            # Process BP after
-                            sys_after = data.get('BP SYS after (mmHg)', 'N/A')
-                            dia_after = data.get('BP DIA after (mmHg)', 'N/A')
-                            if sys_after != 'N/A' and dia_after != 'N/A':
-                                bp_after.append(f"{sys_after}/{dia_after}")
-                            else:
-                                bp_after.append(None)
-                        
-                        # Create two columns for analysis and chart
-                        col1, col2 = st.columns([1, 2])
-                        
-                        with col1:
-                            st.write("**Blood Pressure Analysis:**")
-                            with st.spinner('Analyzing BP trends...'):
-                                bp_analysis = analyze_bp_trends(analysis_data)
-                                st.write(bp_analysis)
-                        
-                        with col2:
-                            # Create BP chart
-                            fig_bp = go.Figure()
-                            
-                            fig_bp.add_trace(go.Scatter(
-                                x=treatment_nums,
-                                y=bp_before,
-                                name='BP Before',
-                                mode='lines+markers',
-                                line=dict(color='royalblue')
-                            ))
-                            
-                            fig_bp.add_trace(go.Scatter(
-                                x=treatment_nums,
-                                y=bp_after,
-                                name='BP After',
-                                mode='lines+markers',
-                                line=dict(color='firebrick')
-                            ))
-                            
-                            fig_bp.update_layout(
-                                title='Blood Pressure Trends Across Sessions',
-                                xaxis_title='Session Number',
-                                yaxis_title='Blood Pressure (systolic/diastolic mmHg)',
-                                legend=dict(
-                                    orientation="h",
-                                    yanchor="bottom",
-                                    y=-0.3,
-                                    xanchor="center",
-                                    x=0.5,
-                                    font=dict(size=12)
-                                ),
-                                margin=dict(t=50, l=50, r=50, b=100),
-                                height=500
-                            )
-                            
-                            st.plotly_chart(fig_bp, use_container_width=True)
-                    else:
-                        st.write("Upload multiple sessions to see progress charts")
+                        st.plotly_chart(fig, use_container_width=True)
                     
                     st.markdown("---")
                     
-                    # Now add the Detailed Treatment Overview section
-                    # Add custom CSS for styling
-                    st.markdown("""
-                        <style>
-                            /* Style for the section header */
-                            .detailed-overview-header {
-                                font-size: 24px;
-                                color: #1E88E5;
-                                padding: 10px 0;
-                                border-bottom: 2px solid #1E88E5;
-                                margin-bottom: 20px;
-                            }
-                            
-                            /* Style for tab labels */
-                            .stTabs [data-baseweb="tab-list"] {
-                                gap: 8px;
-                            }
-                            
-                            .stTabs [data-baseweb="tab"] {
-                                background-color: #f0f2f6;
-                                border-radius: 4px;
-                                padding: 8px 16px;
-                                font-weight: 500;
-                            }
-                            
-                            .stTabs [aria-selected="true"] {
-                                background-color: #1E88E5;
-                                color: white;
-                            }
-                            
-                            /* Style for table headers and cells */
-                            .treatment-header {
-                                font-weight: bold;
-                                color: #1E88E5;
-                                font-size: 16px;
-                                padding: 8px 0;
-                                border-bottom: 1px solid #e0e0e0;
-                            }
-                            
-                            .field-label {
-                                font-weight: 500;
-                                color: #424242;
-                                background-color: #f5f5f5;
-                                padding: 6px;
-                                border-radius: 4px;
-                                margin: 2px 0;
-                            }
-                            
-                            .field-value {
-                                padding: 6px;
-                                border-radius: 4px;
-                                background-color: white;
-                                margin: 2px 0;
-                                border: 1px solid #e0e0e0;
-                            }
-                        </style>
-                    """, unsafe_allow_html=True)
+                    # Create data for the pulse rate chart
+                    min_pr_avg = []
+                    max_pr_avg = []
                     
-                    # Add paginated detailed view with styled header
-                    st.markdown('<h2 class="detailed-overview-header">Detailed Treatment Overview</h2>', unsafe_allow_html=True)
-                    if analysis_data['treatments']:
-                        st.markdown('<div class="detailed-overview-content">', unsafe_allow_html=True)
-                        # Convert treatments to sorted list of tuples
-                        sorted_treatments = sorted(analysis_data['treatments'].items())
+                    for treatment_num, data in sorted(analysis_data['treatments'].items()):
+                        # Process min PR average
+                        min_pr_str = data.get('Min PR Av. (bpm)', '0')
+                        min_pr_avg.append(float(min_pr_str.split()[0]))
                         
-                        # Group treatments into sets of 5 (changed from 10)
-                        sessions_per_page = 5
-                        all_pages = []
-                        current_page = []
+                        # Process max PR average
+                        max_pr_str = data.get('Max PR Av. (bpm)', '0')
+                        max_pr_avg.append(float(max_pr_str.split()[0]))
+                    
+                    # Create two columns for analysis and chart
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        st.write("**Pulse Rate Analysis:**")
+                        with st.spinner('Analyzing pulse rate trends...'):
+                            pr_analysis = analyze_pulse_rate_trends(analysis_data)
+                            st.write(pr_analysis)
+                    
+                    with col2:
+                        # Create pulse rate chart
+                        fig_pr = go.Figure()
                         
-                        for i, (treatment_num, data) in enumerate(sorted_treatments, 1):
-                            current_page.append((treatment_num, data))
-                            if i % sessions_per_page == 0 or i == len(sorted_treatments):
-                                all_pages.append(current_page)
-                                current_page = []
+                        fig_pr.add_trace(go.Scatter(
+                            x=treatment_nums,
+                            y=max_pr_avg,
+                            name='Max PR Average',
+                            mode='lines+markers'
+                        ))
                         
-                        # Add any remaining treatments to the last page
-                        if current_page:
+                        fig_pr.add_trace(go.Scatter(
+                            x=treatment_nums,
+                            y=min_pr_avg,
+                            name='Min PR Average',
+                            mode='lines+markers'
+                        ))
+                        
+                        fig_pr.update_layout(
+                            title='Pulse Rate Average Across Sessions',
+                            xaxis_title='Session Number',
+                            yaxis_title='Pulse Rate (bpm)',
+                            legend=dict(
+                                orientation="h",
+                                yanchor="bottom",
+                                y=-0.3,
+                                xanchor="center",
+                                x=0.5,
+                                font=dict(size=12)
+                            ),
+                            margin=dict(t=50, l=50, r=50, b=100),
+                            height=500
+                        )
+                        
+                        st.plotly_chart(fig_pr, use_container_width=True)
+                    
+                    st.markdown("---")
+                    
+                    # Create data for total hypoxic time chart
+                    total_hypoxic_times = []
+                    
+                    for treatment_num, data in sorted(analysis_data['treatments'].items()):
+                        try:
+                            # Calculate total hypoxic time
+                            hypoxic_dur = data.get('Hypox. Phase dur. Av. (min:sec)', '0:00')
+                            hypo_min, hypo_sec = map(int, hypoxic_dur.split(':'))
+                            total_seconds = hypo_min * 60 + hypo_sec
+                            
+                            cycles_str = data.get('Number of cycles', '0')
+                            num_cycles = int(cycles_str.split()[0])
+                            
+                            total_minutes = (total_seconds * num_cycles) / 60
+                            total_hypoxic_times.append(total_minutes)
+                        except (ValueError, IndexError):
+                            total_hypoxic_times.append(0)
+                    
+                    # Create two columns for analysis and chart
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        st.write("**Total Hypoxic Time Analysis:**")
+                        with st.spinner('Analyzing hypoxic time trends...'):
+                            hypoxic_time_analysis = analyze_total_hypoxic_time(analysis_data)
+                            st.write(hypoxic_time_analysis)
+                    
+                    with col2:
+                        # Create total hypoxic time chart
+                        fig_hypoxic = go.Figure()
+                        
+                        fig_hypoxic.add_trace(go.Scatter(
+                            x=treatment_nums,
+                            y=total_hypoxic_times,
+                            name='Total Hypoxic Time',
+                            mode='lines+markers'
+                        ))
+                        
+                        fig_hypoxic.update_layout(
+                            title='Total Hypoxic Time Across Sessions',
+                            xaxis_title='Session Number',
+                            yaxis_title='Duration (minutes)',
+                            legend=dict(
+                                orientation="h",
+                                yanchor="bottom",
+                                y=-0.3,
+                                xanchor="center",
+                                x=0.5,
+                                font=dict(size=12)
+                            ),
+                            margin=dict(t=50, l=50, r=50, b=100),
+                            height=500
+                        )
+                        
+                        st.plotly_chart(fig_hypoxic, use_container_width=True)
+                    
+                    st.markdown("---")
+                    
+                    # Create data for blood pressure chart
+                    bp_before = []
+                    bp_after = []
+                    
+                    for treatment_num, data in sorted(analysis_data['treatments'].items()):
+                        # Process BP before
+                        sys_before = data.get('BP SYS before (mmHg)', 'N/A')
+                        dia_before = data.get('BP DIA before (mmHg)', 'N/A')
+                        if sys_before != 'N/A' and dia_before != 'N/A':
+                            bp_before.append(f"{sys_before}/{dia_before}")
+                        else:
+                            bp_before.append(None)
+                        
+                        # Process BP after
+                        sys_after = data.get('BP SYS after (mmHg)', 'N/A')
+                        dia_after = data.get('BP DIA after (mmHg)', 'N/A')
+                        if sys_after != 'N/A' and dia_after != 'N/A':
+                            bp_after.append(f"{sys_after}/{dia_after}")
+                        else:
+                            bp_after.append(None)
+                    
+                    # Create two columns for analysis and chart
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        st.write("**Blood Pressure Analysis:**")
+                        with st.spinner('Analyzing BP trends...'):
+                            bp_analysis = analyze_bp_trends(analysis_data)
+                            st.write(bp_analysis)
+                    
+                    with col2:
+                        # Create BP chart
+                        fig_bp = go.Figure()
+                        
+                        fig_bp.add_trace(go.Scatter(
+                            x=treatment_nums,
+                            y=bp_before,
+                            name='BP Before',
+                            mode='lines+markers',
+                            line=dict(color='royalblue')
+                        ))
+                        
+                        fig_bp.add_trace(go.Scatter(
+                            x=treatment_nums,
+                            y=bp_after,
+                            name='BP After',
+                            mode='lines+markers',
+                            line=dict(color='firebrick')
+                        ))
+                        
+                        fig_bp.update_layout(
+                            title='Blood Pressure Trends Across Sessions',
+                            xaxis_title='Session Number',
+                            yaxis_title='Blood Pressure (systolic/diastolic mmHg)',
+                            legend=dict(
+                                orientation="h",
+                                yanchor="bottom",
+                                y=-0.3,
+                                xanchor="center",
+                                x=0.5,
+                                font=dict(size=12)
+                            ),
+                            margin=dict(t=50, l=50, r=50, b=100),
+                            height=500
+                        )
+                        
+                        st.plotly_chart(fig_bp, use_container_width=True)
+                else:
+                    st.write("Upload multiple sessions to see progress charts")
+                
+                st.markdown("---")
+                
+                # Now add the Detailed Treatment Overview section
+                # Add custom CSS for styling
+                st.markdown("""
+                    <style>
+                        /* Style for the section header */
+                        .detailed-overview-header {
+                            font-size: 24px;
+                            color: #1E88E5;
+                            padding: 10px 0;
+                            border-bottom: 2px solid #1E88E5;
+                            margin-bottom: 20px;
+                        }
+                        
+                        /* Style for tab labels */
+                        .stTabs [data-baseweb="tab-list"] {
+                            gap: 8px;
+                        }
+                        
+                        .stTabs [data-baseweb="tab"] {
+                            background-color: #f0f2f6;
+                            border-radius: 4px;
+                            padding: 8px 16px;
+                            font-weight: 500;
+                        }
+                        
+                        .stTabs [aria-selected="true"] {
+                            background-color: #1E88E5;
+                            color: white;
+                        }
+                        
+                        /* Style for table headers and cells */
+                        .treatment-header {
+                            font-weight: bold;
+                            color: #1E88E5;
+                            font-size: 16px;
+                            padding: 8px 0;
+                            border-bottom: 1px solid #e0e0e0;
+                        }
+                        
+                        .field-label {
+                            font-weight: 500;
+                            color: #424242;
+                            background-color: #f5f5f5;
+                            padding: 6px;
+                            border-radius: 4px;
+                            margin: 2px 0;
+                        }
+                        
+                        .field-value {
+                            padding: 6px;
+                            border-radius: 4px;
+                            background-color: white;
+                            margin: 2px 0;
+                            border: 1px solid #e0e0e0;
+                        }
+                    </style>
+                """, unsafe_allow_html=True)
+                
+                # Add paginated detailed view with styled header
+                st.markdown('<h2 class="detailed-overview-header">Detailed Treatment Overview</h2>', unsafe_allow_html=True)
+                if analysis_data['treatments']:
+                    st.markdown('<div class="detailed-overview-content">', unsafe_allow_html=True)
+                    # Convert treatments to sorted list of tuples
+                    sorted_treatments = sorted(analysis_data['treatments'].items())
+                    
+                    # Group treatments into sets of 5 (changed from 10)
+                    sessions_per_page = 5
+                    all_pages = []
+                    current_page = []
+                    
+                    for i, (treatment_num, data) in enumerate(sorted_treatments, 1):
+                        current_page.append((treatment_num, data))
+                        if i % sessions_per_page == 0 or i == len(sorted_treatments):
                             all_pages.append(current_page)
-                        
-                        # Create tabs for each group of 5 (updated labels)
-                        tab_labels = [f"Sessions {i*5-4}-{min(i*5, len(sorted_treatments))}" 
-                                     for i in range(1, len(all_pages) + 1)]
-                        tabs = st.tabs(tab_labels)
-                        
-                        # Define fields to display
-                        fields = [
-                            ('Date', 'Treatment Date'),
-                            ('Procedure duration (min:sec)', 'Total Duration'),
-                            ('total_hypoxic_calc', 'Total Hypoxic Time (approx)'),
-                            ('Number of cycles', 'Number of Cycles'),
-                            ('Hypox. Phase dur. Av. (min:sec)', 'Hypoxic Phase Duration Average'),
-                            ('Min SpO2 Av. (%)', 'Min SpO2 Average'),
-                            ('Hyperox. Phase dur. Av. (min:sec)', 'Hyperoxic Phase Duration Average'),
-                            ('Max SpO2 Av. (%)', 'Max SpO2 Average'),
-                            ('Min PR Av. (bpm)', 'Min PR Average'),
-                            ('Max PR Av. (bpm)', 'Max PR Average'),
-                            ('Therapeutic SpO2 (%)', 'Therapeutic SpO2'),
-                            ('Hypoxic O2 conc. (%)', 'Hypoxic O2 Concentration'),
-                            ('BP_before', 'BP Before Procedure'),
-                            ('BP_after', 'BP After Procedure')
-                        ]
-                        
-                        # Display content for each tab
-                        for tab_index, tab in enumerate(tabs):
-                            with tab:
-                                current_treatments = all_pages[tab_index]
-                                
-                                # Create columns for the table
+                            current_page = []
+                    
+                    # Add any remaining treatments to the last page
+                    if current_page:
+                        all_pages.append(current_page)
+                    
+                    # Create tabs for each group of 5 (updated labels)
+                    tab_labels = [f"Sessions {i*5-4}-{min(i*5, len(sorted_treatments))}" 
+                                 for i in range(1, len(all_pages) + 1)]
+                    tabs = st.tabs(tab_labels)
+                    
+                    # Define fields to display
+                    fields = [
+                        ('Date', 'Treatment Date'),
+                        ('Procedure duration (min:sec)', 'Total Duration'),
+                        ('total_hypoxic_calc', 'Total Hypoxic Time (approx)'),
+                        ('Number of cycles', 'Number of Cycles'),
+                        ('Hypox. Phase dur. Av. (min:sec)', 'Hypoxic Phase Duration Average'),
+                        ('Min SpO2 Av. (%)', 'Min SpO2 Average'),
+                        ('Hyperox. Phase dur. Av. (min:sec)', 'Hyperoxic Phase Duration Average'),
+                        ('Max SpO2 Av. (%)', 'Max SpO2 Average'),
+                        ('Min PR Av. (bpm)', 'Min PR Average'),
+                        ('Max PR Av. (bpm)', 'Max PR Average'),
+                        ('Therapeutic SpO2 (%)', 'Therapeutic SpO2'),
+                        ('Hypoxic O2 conc. (%)', 'Hypoxic O2 Concentration'),
+                        ('BP_before', 'BP Before Procedure'),
+                        ('BP_after', 'BP After Procedure')
+                    ]
+                    
+                    # Display content for each tab
+                    for tab_index, tab in enumerate(tabs):
+                        with tab:
+                            current_treatments = all_pages[tab_index]
+                            
+                            # Create columns for the table
+                            cols = st.columns(len(current_treatments) + 1)
+                            
+                            # Treatment number headers
+                            for i, (treatment_num, _) in enumerate(current_treatments, 1):
+                                cols[i].markdown(f'<div class="treatment-header">Session {treatment_num}</div>', unsafe_allow_html=True)
+                            
+                            # Create rows
+                            for field_key, field_label in fields:
                                 cols = st.columns(len(current_treatments) + 1)
-                                
-                                # Treatment number headers
-                                for i, (treatment_num, _) in enumerate(current_treatments, 1):
-                                    cols[i].markdown(f'<div class="treatment-header">Session {treatment_num}</div>', unsafe_allow_html=True)
-                                
-                                # Create rows
-                                for field_key, field_label in fields:
-                                    cols = st.columns(len(current_treatments) + 1)
-                                    cols[0].markdown(f'<div class="field-label">{field_label}</div>', unsafe_allow_html=True)
-                                    for i, (treatment_num, data) in enumerate(current_treatments, 1):
-                                        if field_key == 'BP_before':
-                                            sys_before = data.get('BP SYS before (mmHg)', 'N/A')
-                                            dia_before = data.get('BP DIA before (mmHg)', 'N/A')
-                                            value = f"{sys_before}/{dia_before}" if sys_before != 'N/A' else 'N/A'
-                                        elif field_key == 'BP_after':
-                                            sys_after = data.get('BP SYS after (mmHg)', 'N/A')
-                                            dia_after = data.get('BP DIA after (mmHg)', 'N/A')
-                                            value = f"{sys_after}/{dia_after}" if sys_after != 'N/A' else 'N/A'
-                                        elif field_key == 'total_hypoxic_calc':
-                                            try:
-                                                # Get hypoxic phase duration
-                                                hypoxic_dur = data.get('Hypox. Phase dur. Av. (min:sec)', 'N/A')
-                                                if hypoxic_dur != 'N/A':
-                                                    # Convert "MM:SS" to total seconds
-                                                    min_sec = hypoxic_dur.split(':')
-                                                    total_seconds = int(min_sec[0]) * 60 + int(min_sec[1])
+                                cols[0].markdown(f'<div class="field-label">{field_label}</div>', unsafe_allow_html=True)
+                                for i, (treatment_num, data) in enumerate(current_treatments, 1):
+                                    if field_key == 'BP_before':
+                                        sys_before = data.get('BP SYS before (mmHg)', 'N/A')
+                                        dia_before = data.get('BP DIA before (mmHg)', 'N/A')
+                                        value = f"{sys_before}/{dia_before}" if sys_before != 'N/A' else 'N/A'
+                                    elif field_key == 'BP_after':
+                                        sys_after = data.get('BP SYS after (mmHg)', 'N/A')
+                                        dia_after = data.get('BP DIA after (mmHg)', 'N/A')
+                                        value = f"{sys_after}/{dia_after}" if sys_after != 'N/A' else 'N/A'
+                                    elif field_key == 'total_hypoxic_calc':
+                                        try:
+                                            # Get hypoxic phase duration
+                                            hypoxic_dur = data.get('Hypox. Phase dur. Av. (min:sec)', 'N/A')
+                                            if hypoxic_dur != 'N/A':
+                                                # Convert "MM:SS" to total seconds
+                                                min_sec = hypoxic_dur.split(':')
+                                                total_seconds = int(min_sec[0]) * 60 + int(min_sec[1])
+                                                
+                                                # Get number of cycles
+                                                cycles_str = data.get('Number of cycles', 'N/A')
+                                                if cycles_str != 'N/A':
+                                                    num_cycles = int(cycles_str.split()[0])  # Get first number
                                                     
-                                                    # Get number of cycles
-                                                    cycles_str = data.get('Number of cycles', 'N/A')
-                                                    if cycles_str != 'N/A':
-                                                        num_cycles = int(cycles_str.split()[0])  # Get first number
-                                                        
-                                                        # Calculate total time in seconds
-                                                        total_time_seconds = total_seconds * num_cycles
-                                                        
-                                                        # Convert back to MM:SS format
-                                                        minutes = total_time_seconds // 60
-                                                        seconds = total_time_seconds % 60
-                                                        value = f"{minutes:02d}:{seconds:02d}"
-                                                    else:
-                                                        value = 'N/A'
+                                                    # Calculate total time in seconds
+                                                    total_time_seconds = total_seconds * num_cycles
+                                                    
+                                                    # Convert back to MM:SS format
+                                                    minutes = total_time_seconds // 60
+                                                    seconds = total_time_seconds % 60
+                                                    value = f"{minutes:02d}:{seconds:02d}"
                                                 else:
                                                     value = 'N/A'
-                                            except (ValueError, IndexError):
+                                            else:
                                                 value = 'N/A'
-                                        else:
-                                            value = df.loc[treatment_num, field_key] if field_key in df.columns else data.get(field_key, 'N/A')
-                                        cols[i].markdown(f'<div class="field-value">{value}</div>', unsafe_allow_html=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
+                                        except (ValueError, IndexError):
+                                            value = 'N/A'
+                                    else:
+                                        value = df.loc[treatment_num, field_key] if field_key in df.columns else data.get(field_key, 'N/A')
+                                    cols[i].markdown(f'<div class="field-value">{value}</div>', unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main() 
