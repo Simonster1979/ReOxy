@@ -571,7 +571,12 @@ def analyze_hypoxic_time(sorted_results):
 
 def analyze_case_history(case_history, sorted_results):
     try:
-        client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        # Check if API key exists
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            return "Unable to analyze case history - API key not configured. Please contact support."
+            
+        client = Anthropic(api_key=api_key)
         
         # Get the latest session data
         latest_session = sorted_results[max(sorted_results.keys())]
@@ -589,12 +594,14 @@ def analyze_case_history(case_history, sorted_results):
         
         response = client.messages.create(
             model="claude-3-sonnet-20240229",
-            max_tokens=200,  # Reduced token limit for more concise response
+            max_tokens=200,
             messages=[{"role": "user", "content": prompt}]
         )
         return response.content[0].text
+    except anthropic.APIError as e:
+        return "Unable to analyze case history due to API error. Please try again later."
     except Exception as e:
-        return f"Error analyzing case history: {str(e)}"
+        return f"Unable to analyze case history. Please ensure API keys are properly configured."
 
 def analyze_bp_trends(sorted_results):
     try:

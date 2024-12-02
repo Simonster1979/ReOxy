@@ -4,4 +4,5 @@ pandas
 openai
 python-dotenv
 plotly
-anthropic 
+anthropic
+fpdf

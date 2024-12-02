@@ -1,4 +1,3 @@
-# all working including patient info now need to parse to app.py
 import pdfplumber
 import io
 import streamlit as st
@@ -17,6 +16,31 @@ from datetime import datetime
 
 # Load environment variables
 load_dotenv()
+
+ANALYSIS_STRATEGIES = {
+    "Analysis Depth": {
+        "Comprehensive Analysis": "Provide a detailed, thorough analysis with in-depth examination of all metrics and their relationships",
+        "Standard Overview": "Give a balanced analysis covering key points and notable findings",
+        "Quick Summary": "Provide a concise summary focusing only on the most critical findings"
+    },
+    "Language Style": {
+        "Technical": "Use precise medical and technical terminology appropriate for healthcare professionals",
+        "Plain Language": "Explain findings in clear, simple terms avoiding technical jargon",
+        "ELI5": "Break down concepts into their simplest form using analogies and simple explanations"
+    },
+    "Focus Areas": {
+        "Clinical Outcomes": "Emphasize treatment effectiveness and patient response patterns",
+        "Safety & Monitoring": "Focus on safety parameters and risk management aspects",
+        "Progress Tracking": "Highlight changes and improvements across sessions",
+        "Future Planning": "Emphasize recommendations and future treatment strategies"
+    },
+    "Analysis Structure": {
+        "Systematic Breakdown": "Analyze each aspect methodically with clear categorization",
+        "Problem-Solution": "Identify challenges and provide specific solutions",
+        "Comparative Analysis": "Focus on comparing results across sessions and identifying patterns",
+        "Action-Oriented": "Emphasize practical next steps and actionable recommendations"
+    }
+}
 
 def extract_course_report(pdf_file):
     """
@@ -221,6 +245,23 @@ def analyze_case_history(case_history, analysis_data):
     try:
         client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         
+        # Get selected strategies from session state
+        strategies = {
+            "Analysis Depth": st.session_state.get("strategy_Analysis Depth", "Standard Overview"),
+            "Language Style": st.session_state.get("strategy_Language Style", "Plain Language"),
+            "Focus Areas": st.session_state.get("strategy_Focus Areas", "Clinical Outcomes"),
+            "Analysis Structure": st.session_state.get("strategy_Analysis Structure", "Systematic Breakdown")
+        }
+        
+        # Build strategy instructions
+        strategy_instructions = "\n".join([
+            f"Analysis Approach:",
+            f"- Depth: {ANALYSIS_STRATEGIES['Analysis Depth'][strategies['Analysis Depth']]}",
+            f"- Style: {ANALYSIS_STRATEGIES['Language Style'][strategies['Language Style']]}",
+            f"- Focus: {ANALYSIS_STRATEGIES['Focus Areas'][strategies['Focus Areas']]}",
+            f"- Structure: {ANALYSIS_STRATEGIES['Analysis Structure'][strategies['Analysis Structure']]}"
+        ])
+        
         # Get treatment metrics for analysis
         treatment_data = []
         for treatment_num, data in sorted(analysis_data['treatments'].items()):
@@ -234,7 +275,9 @@ def analyze_case_history(case_history, analysis_data):
             - BP After: {data.get('BP SYS after (mmHg)', 'N/A')}/{data.get('BP DIA after (mmHg)', 'N/A')}
             """)
         
-        prompt = f"""Based on the patient's case history and ReOxy treatment results, identify key correlations and relevant clinical insights in 2-3 sentences.
+        prompt = f"""Based on the following analysis approach and patient data, provide a targeted analysis:
+
+        {strategy_instructions}
 
         Case History:
         {case_history}
@@ -248,7 +291,7 @@ def analyze_case_history(case_history, analysis_data):
         Detailed Treatment Results:
         {''.join(treatment_data)}
 
-        Please analyze:
+        Please analyze according to the specified approach, focusing on:
         1. How the patient's medical history relates to their treatment responses
         2. Any patterns in vital signs that correlate with their medical history
         3. Potential implications for future treatment based on history and responses
@@ -256,7 +299,7 @@ def analyze_case_history(case_history, analysis_data):
         
         response = client.messages.create(
             model="claude-3-sonnet-20240229",
-            max_tokens=200,
+            max_tokens=1000,  # Increased token limit to accommodate more detailed responses
             messages=[{"role": "user", "content": prompt}]
         )
         return response.content[0].text
@@ -268,8 +311,25 @@ def compare_sessions(course_data):
         client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         sessions_data = []
         
+        # Get selected strategies from session state
+        strategies = {
+            "Analysis Depth": st.session_state.get("strategy_Analysis Depth", "Standard Overview"),
+            "Language Style": st.session_state.get("strategy_Language Style", "Plain Language"),
+            "Focus Areas": st.session_state.get("strategy_Focus Areas", "Clinical Outcomes"),
+            "Analysis Structure": st.session_state.get("strategy_Analysis Structure", "Systematic Breakdown")
+        }
+        
+        # Build strategy instructions
+        strategy_instructions = "\n".join([
+            f"Analysis Approach:",
+            f"- Depth: {ANALYSIS_STRATEGIES['Analysis Depth'][strategies['Analysis Depth']]}",
+            f"- Style: {ANALYSIS_STRATEGIES['Language Style'][strategies['Language Style']]}",
+            f"- Focus: {ANALYSIS_STRATEGIES['Focus Areas'][strategies['Focus Areas']]}",
+            f"- Structure: {ANALYSIS_STRATEGIES['Analysis Structure'][strategies['Analysis Structure']]}"
+        ])
+
         for treatment_num, data in course_data['treatments'].items():
-            # Extract key metrics
+            # Extract key metrics (existing code)
             sessions_data.append(f"""
             Session {treatment_num}:
             Treatment Metrics:
@@ -283,7 +343,11 @@ def compare_sessions(course_data):
             - Hypoxic O2 conc. (%): {data.get('Hypoxic O2 conc. (%)', 'N/A')}
             """)
 
-        prompt = f"""Analyze the following ReOxy treatment sessions and provide insights on:
+        prompt = f"""Based on the following analysis approach and treatment sessions data, provide a targeted analysis:
+
+        {strategy_instructions}
+
+        Analyze the following ReOxy treatment sessions and provide insights on:
         1. Changes in SpO2 tolerance and adaptation between sessions
         2. Heart rate response patterns and cardiovascular adaptation
         3. Changes in treatment duration and number of cycles
@@ -291,7 +355,7 @@ def compare_sessions(course_data):
         
         Treatment Data:{''.join(sessions_data)}
         
-        Provide a concise analysis highlighting key trends, improvements, or areas of note between sessions."""
+        Provide an analysis according to the specified approach, highlighting key trends, improvements, or areas of note between sessions."""
         
         response = client.messages.create(
             model="claude-3-sonnet-20240229",
@@ -468,6 +532,23 @@ def compare_sessions_openai(analysis_data):
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         sessions_data = []
         
+        # Get selected strategies from session state
+        strategies = {
+            "Analysis Depth": st.session_state.get("strategy_Analysis Depth", "Standard Overview"),
+            "Language Style": st.session_state.get("strategy_Language Style", "Plain Language"),
+            "Focus Areas": st.session_state.get("strategy_Focus Areas", "Clinical Outcomes"),
+            "Analysis Structure": st.session_state.get("strategy_Analysis Structure", "Systematic Breakdown")
+        }
+        
+        # Build strategy instructions
+        strategy_instructions = "\n".join([
+            f"Analysis Approach:",
+            f"- Depth: {ANALYSIS_STRATEGIES['Analysis Depth'][strategies['Analysis Depth']]}",
+            f"- Style: {ANALYSIS_STRATEGIES['Language Style'][strategies['Language Style']]}",
+            f"- Focus: {ANALYSIS_STRATEGIES['Focus Areas'][strategies['Focus Areas']]}",
+            f"- Structure: {ANALYSIS_STRATEGIES['Analysis Structure'][strategies['Analysis Structure']]}"
+        ])
+        
         for treatment_num, data in analysis_data['treatments'].items():
             sessions_data.append(f"""
             Session {treatment_num}:
@@ -482,7 +563,11 @@ def compare_sessions_openai(analysis_data):
             - Hypoxic O2 conc. (%): {data.get('Hypoxic O2 conc. (%)', 'N/A')}
             """)
 
-        prompt = f"""Analyze the following ReOxy treatment sessions and provide insights on:
+        prompt = f"""Based on the following analysis approach and treatment sessions data, provide a targeted analysis:
+
+        {strategy_instructions}
+
+        Analyze the following ReOxy treatment sessions and provide insights on:
         1. Changes in SpO2 tolerance and adaptation between sessions
         2. Heart rate response patterns and cardiovascular adaptation
         3. Changes in treatment duration and number of cycles
@@ -490,7 +575,7 @@ def compare_sessions_openai(analysis_data):
         
         Treatment Data:{''.join(sessions_data)}
         
-        Provide a concise analysis highlighting key trends, improvements, or areas of note between sessions."""
+        Provide an analysis according to the specified approach, highlighting key trends, improvements, or areas of note between sessions."""
         
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -809,6 +894,76 @@ def main():
     
     # Wrap the case history section in a div with the print-hiding class
     with st.container():
+        # First show Analysis Strategies
+        st.markdown('<div class="analysis-strategies">', unsafe_allow_html=True)
+        st.subheader("Analysis Strategies")
+        
+        # Create four columns for strategy options
+        col1, col2, col3, col4 = st.columns(4)
+        selected_strategies = {}
+        
+        # Analysis Depth in first column
+        with col1:
+            st.markdown("**Analysis Depth**")
+            selected_strategy = st.radio(
+                "Select Analysis Depth:",
+                options=list(ANALYSIS_STRATEGIES["Analysis Depth"].keys()),
+                key="strategy_Analysis Depth",
+                label_visibility="collapsed"
+            )
+            selected_strategies["Analysis Depth"] = {
+                "selection": selected_strategy,
+                "instruction": ANALYSIS_STRATEGIES["Analysis Depth"][selected_strategy]
+            }
+        
+        # Language Style in second column
+        with col2:
+            st.markdown("**Language Style**")
+            selected_strategy = st.radio(
+                "Select Language Style:",
+                options=list(ANALYSIS_STRATEGIES["Language Style"].keys()),
+                key="strategy_Language Style",
+                label_visibility="collapsed"
+            )
+            selected_strategies["Language Style"] = {
+                "selection": selected_strategy,
+                "instruction": ANALYSIS_STRATEGIES["Language Style"][selected_strategy]
+            }
+        
+        # Focus Areas in third column
+        with col3:
+            st.markdown("**Focus Areas**")
+            selected_strategy = st.radio(
+                "Select Focus Areas:",
+                options=list(ANALYSIS_STRATEGIES["Focus Areas"].keys()),
+                key="strategy_Focus Areas",
+                label_visibility="collapsed"
+            )
+            selected_strategies["Focus Areas"] = {
+                "selection": selected_strategy,
+                "instruction": ANALYSIS_STRATEGIES["Focus Areas"][selected_strategy]
+            }
+        
+        # Analysis Structure in fourth column
+        with col4:
+            st.markdown("**Analysis Structure**")
+            selected_strategy = st.radio(
+                "Select Analysis Structure:",
+                options=list(ANALYSIS_STRATEGIES["Analysis Structure"].keys()),
+                key="strategy_Analysis Structure",
+                label_visibility="collapsed"
+            )
+            selected_strategies["Analysis Structure"] = {
+                "selection": selected_strategy,
+                "instruction": ANALYSIS_STRATEGIES["Analysis Structure"][selected_strategy]
+            }
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Add some spacing
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Then show Patient Case History
         st.markdown('<div class="patient-case-history">', unsafe_allow_html=True)
         case_history = st.text_area(
             "Patient Case History",
@@ -817,7 +972,7 @@ def main():
             key="course_report_case_history"
         )
         st.markdown('</div>', unsafe_allow_html=True)
-    
+
     # Add a separator
     st.markdown("---")
     
@@ -1374,3 +1529,4 @@ def main():
 
 if __name__ == "__main__":
     main() 
+
