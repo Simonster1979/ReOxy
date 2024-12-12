@@ -535,8 +535,11 @@ def generate_recommendations_openai(analysis_data):
         return f"Error generating recommendations: {str(e)}"
 
 def main():
-    # Replace the AI model selectbox with a hidden default
-    ai_model = "Claude 3 Sonnet"  # Set default model
+    # Add AI model selector to sidebar
+    ai_model = st.sidebar.selectbox(
+        "Select AI Model",
+        ["OpenAI GPT-3.5","Claude 3 Sonnet"]
+    )
     
     st.title("Course Report PDF Extractor")
     
@@ -1065,13 +1068,7 @@ def main():
                             sys_before = data.get('BP SYS before (mmHg)', 'N/A')
                             dia_before = data.get('BP DIA before (mmHg)', 'N/A')
                             if sys_before != 'N/A' and dia_before != 'N/A':
-                                try:
-                                    # Convert to numeric values
-                                    sys_before = float(sys_before)
-                                    dia_before = float(dia_before)
-                                    bp_before.append(sys_before)  # Only use systolic for y-axis
-                                except (ValueError, TypeError):
-                                    bp_before.append(None)
+                                bp_before.append(f"{sys_before}/{dia_before}")
                             else:
                                 bp_before.append(None)
                             
@@ -1079,13 +1076,7 @@ def main():
                             sys_after = data.get('BP SYS after (mmHg)', 'N/A')
                             dia_after = data.get('BP DIA after (mmHg)', 'N/A')
                             if sys_after != 'N/A' and dia_after != 'N/A':
-                                try:
-                                    # Convert to numeric values
-                                    sys_after = float(sys_after)
-                                    dia_after = float(dia_after)
-                                    bp_after.append(sys_after)  # Only use systolic for y-axis
-                                except (ValueError, TypeError):
-                                    bp_after.append(None)
+                                bp_after.append(f"{sys_after}/{dia_after}")
                             else:
                                 bp_after.append(None)
                         
@@ -1102,19 +1093,20 @@ def main():
                             # Create BP chart
                             fig_bp = go.Figure()
                             
-                            # Remove custom colors to match other charts
                             fig_bp.add_trace(go.Scatter(
                                 x=treatment_nums,
                                 y=bp_before,
                                 name='BP Before',
-                                mode='lines+markers'
+                                mode='lines+markers',
+                                line=dict(color='royalblue')
                             ))
                             
                             fig_bp.add_trace(go.Scatter(
                                 x=treatment_nums,
                                 y=bp_after,
                                 name='BP After',
-                                mode='lines+markers'
+                                mode='lines+markers',
+                                line=dict(color='firebrick')
                             ))
                             
                             fig_bp.update_layout(

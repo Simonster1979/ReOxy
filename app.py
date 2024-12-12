@@ -637,6 +637,10 @@ def main():
                     break-inside: avoid !important;
                 }
                 
+                .esjhkag0 {
+                    display: none !important;
+                }
+
                 /* Ensure charts fit within page */
                 .js-plotly-plot, .plotly {
                     max-height: 400px !important;
@@ -652,7 +656,7 @@ def main():
                 /* Adjust margins and paper size */
                 @page {
                     size: A4;
-                    margin: 2cm;
+                    margin: 0.5cm;
                 }
                 
                 /* Hide Streamlit components during print */
@@ -686,9 +690,9 @@ def main():
                 
                 .css-1d391kg {
                     display: none !important;
-            }
+                }
                 
-                            /* Hide Extracted Results section */
+                /* Hide Extracted Results section */
                 [data-testid="stExpander"] {
                     display: none !important;
                 }
@@ -701,9 +705,14 @@ def main():
                 .stDownloadButton {
                     display: none !important;
                 }
-            
                 
-                   /* Increase font sizes for print */
+                /* Hide Detailed Treatment Overview section */
+                .detailed-overview-header,
+                .detailed-overview-content {
+                    display: none !important;
+                }
+                
+                /* Increase font sizes for print */
                 h1 {
                     font-size: 32pt !important;
                 }
@@ -712,7 +721,7 @@ def main():
                     font-size: 26pt !important;
                 }
                 
-                p, div, span {
+                p, div, span, li {
                     font-size: 20pt !important;
                 }
                 
@@ -759,11 +768,18 @@ def main():
     # Add a separator
     st.markdown("---")
     
-    # Changed order to make Claude the default
-    ai_model = st.sidebar.selectbox(
-        "Select AI Model",
-        ["OpenAI GPT-3.5", "Claude 3 Sonnet"]
-    )
+    # Replace the selectbox with a default value
+    ai_model = "OpenAI GPT-3.5"  # Changed from "Claude 3 Sonnet"
+
+    # Add this CSS to hide any remaining selectbox
+    st.markdown("""
+        <style>
+            /* Hide "Select AI Model" section */
+            [data-testid="stSidebarSelectbox"] {
+                display: none;
+            }
+        </style>
+    """, unsafe_allow_html=True)
     
     # Initialize session state for uploaded files
     if 'uploaded_files' not in st.session_state:
@@ -860,9 +876,9 @@ def main():
                 # Display Patient Information first
                 st.subheader("Patient Information")
                 first_patient = next(iter(sorted_results.values()))
-                st.write(f"**Patient Name:** {first_patient['patient_name']}")
-                st.write(f"**Date of Birth:** {first_patient['date_of_birth']}")
-                st.write(f"**Sex:** {first_patient['sex']}")
+                
+                # Display patient information in a single line separated by '|'
+                st.write(f"**Patient Name:** {first_patient['patient_name']} | **Date of Birth:** {first_patient['date_of_birth']} | **Sex:** {first_patient['sex']}")
                 
                 # Add case history analysis if text was entered
                 if case_history.strip():
@@ -873,21 +889,13 @@ def main():
                 # Add a separator
                 st.markdown("---")
                 
-                # Replace the two-column layout with stacked sections
+                # Session Comparison
                 st.subheader("Session Comparison")
                 if len(sorted_results) > 1:
-                    comparison = compare_sessions_claude(sorted_results) if ai_model == "Claude 3 Sonnet" else compare_sessions_openai(sorted_results)
+                    comparison = compare_sessions_openai(sorted_results)
                     st.write(comparison)
                 else:
                     st.write("Upload multiple sessions to see comparison")
-                
-                # Add a separator between sections
-                st.markdown("---")
-                
-                st.subheader("Treatment Recommendations")
-                latest_session = sorted_results[max(sorted_results.keys())]
-                recommendations = generate_recommendations_claude(latest_session) if ai_model == "Claude 3 Sonnet" else generate_recommendations(latest_session)
-                st.write(recommendations)
                 
                 # Add a separator before the charts section
                 st.markdown("---")
@@ -895,195 +903,177 @@ def main():
                 # Add charts section
                 st.subheader("Treatment Progress Charts")
                 
-                if len(sorted_results) > 1:  # Only show charts if there are multiple sessions
+                if len(sorted_results) > 1:  # Only show charts for multiple sessions
+                    # Create all charts first
                     fig_pr_comparison, fig_phases, fig_hypoxic_time, fig_bp_comparison = create_charts(sorted_results)
                     
-                    # Display phase duration chart and analysis
-                    col1, col2 = st.columns([1, 2])  # 1:2 ratio for analysis:chart
-
-                    with col1:
-                        st.write("**Phase Duration Analysis:**")
-                        with st.spinner('Analyzing phase durations...'):
-                            phase_analysis = analyze_hyperoxic_duration(sorted_results)
-                            st.write(phase_analysis)
-
-                    with col2:
-                        st.plotly_chart(fig_phases, use_container_width=True)
-
-                    st.markdown("---")
-
-                    # PR Comparison Chart
-                    col1, col2 = st.columns([1, 2])
-
-                    with col1:
-                        st.write("**Pulse Rate Analysis:**")
-                        with st.spinner('Analyzing pulse rate trends...'):
-                            pr_analysis = analyze_pr_trends(sorted_results)
-                            st.write(pr_analysis)
-
-                    with col2:
-                        st.plotly_chart(fig_pr_comparison, use_container_width=True)
-
-                    st.markdown("---")
-
-                    # Total Hypoxic Time Chart
-                    col1, col2 = st.columns([1, 2])
-
-                    with col1:
-                        st.write("**Total Hypoxic Time Analysis:**")
-                        with st.spinner('Analyzing hypoxic time trends...'):
-                            hypoxic_analysis = analyze_hypoxic_time(sorted_results)
-                            st.write(hypoxic_analysis)
-
-                    with col2:
-                        st.plotly_chart(fig_hypoxic_time, use_container_width=True)
-
-                    st.markdown("---")
-
-                    # BP Comparison Chart
-                    col1, col2 = st.columns([1, 2])
-
-                    with col1:
-                        st.write("**Blood Pressure Analysis:**")
-                        with st.spinner('Analyzing BP trends...'):
-                            bp_analysis = analyze_bp_trends(sorted_results)
-                            st.write(bp_analysis)
-
-                    with col2:
-                        st.plotly_chart(fig_bp_comparison, use_container_width=True)
-
-                    # Add a separator before the extracted results
+                    # Phase Duration Chart
+                    st.write("**Phase Duration Analysis:**")
+                    st.plotly_chart(fig_phases, use_container_width=True)
+                    with st.spinner('Analyzing phase durations...'):
+                        phase_analysis = analyze_hyperoxic_duration(sorted_results)
+                        st.write(phase_analysis)
+                    
                     st.markdown("---")
                     
-                    # Add the Detailed Treatment Overview section
-                    st.markdown('<h2 class="detailed-overview-header">Detailed Treatment Overview</h2>', unsafe_allow_html=True)
-
-                    if sorted_results:
-                        st.markdown('<div class="detailed-overview-content">', unsafe_allow_html=True)
-                        # Convert treatments to sorted list of tuples
-                        sorted_treatments = sorted(sorted_results.items())
-                        
-                        # Group treatments into sets of 5
-                        sessions_per_page = 5
-                        all_pages = []
-                        current_page = []
-                        
-                        for i, (treatment_num, data) in enumerate(sorted_treatments, 1):
-                            current_page.append((treatment_num, data))
-                            if i % sessions_per_page == 0 or i == len(sorted_treatments):
-                                all_pages.append(current_page)
-                                current_page = []
-                        
-                        # Add any remaining treatments to the last page
-                        if current_page:
-                            all_pages.append(current_page)
-                        
-                        # Create tabs for each group of 5
-                        tab_labels = [f"Sessions {i*5-4}-{min(i*5, len(sorted_treatments))}" 
-                                      for i in range(1, len(all_pages) + 1)]
-                        tabs = st.tabs(tab_labels)
-                        
-                        # Define fields to display
-                        fields = [
-                            ('treatment_date', 'Treatment Date'),
-                            ('total_duration', 'Total Duration'),
-                            ('total_hypoxic_time', 'Total Hypoxic Time'),
-                            ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
-                            ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
-                            ('min_spo2_average', 'Min SpO2 Average'),
-                            ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
-                            ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
-                            ('max_spo2_average', 'Max SpO2 Average'),
-                            ('baseline_pr', 'Baseline PR'),
-                            ('min_pr_average', 'Min PR Average'),
-                            ('max_pr_average', 'Max PR Average'),
-                            ('pr_after_procedure', 'PR After Procedure'),
-                            ('pr_elevation_bpm', 'PR Elevation (BPM)'),
-                            ('pr_elevation_percent', 'PR Elevation (%)'),
-                            ('bp_before_procedure', 'BP Before Procedure'),
-                            ('bp_after_procedure', 'BP After Procedure')
-                        ]
-                        
-                        # Add custom CSS for styling
-                        st.markdown("""
-                            <style>
-                                /* Style for the section header */
-                                .detailed-overview-header {
-                                    font-size: 24px;
-                                    color: #1E88E5;
-                                    padding: 10px 0;
-                                    border-bottom: 2px solid #1E88E5;
-                                    margin-bottom: 20px;
-                                }
-                                
-                                /* Style for tab labels */
-                                .stTabs [data-baseweb="tab-list"] {
-                                    gap: 8px;
-                                }
-                                
-                                .stTabs [data-baseweb="tab"] {
-                                    background-color: #f0f2f6;
-                                    border-radius: 4px;
-                                    padding: 8px 16px;
-                                    font-weight: 500;
-                                }
-                                
-                                .stTabs [aria-selected="true"] {
-                                    background-color: #1E88E5;
-                                    color: white;
-                                }
-                                
-                                /* Style for table headers and cells */
-                                .treatment-header {
-                                    font-weight: bold;
-                                    color: #1E88E5;
-                                    font-size: 16px;
-                                    padding: 8px 0;
-                                    border-bottom: 1px solid #e0e0e0;
-                                }
-                                
-                                .field-label {
-                                    font-weight: 500;
-                                    color: #424242;
-                                    background-color: #f5f5f5;
-                                    padding: 6px;
-                                    border-radius: 4px;
-                                    margin: 2px 0;
-                                }
-                                
-                                .field-value {
-                                    padding: 6px;
-                                    border-radius: 4px;
-                                    background-color: white;
-                                    margin: 2px 0;
-                                    border: 1px solid #e0e0e0;
-                                }
-                            </style>
-                        """, unsafe_allow_html=True)
-                        
-                        # Display content for each tab
-                        for tab_index, tab in enumerate(tabs):
-                            with tab:
-                                current_treatments = all_pages[tab_index]
-                                
-                                # Create columns for the table
-                                cols = st.columns(len(current_treatments) + 1)
-                                
-                                # Treatment number headers
-                                for i, (treatment_num, _) in enumerate(current_treatments, 1):
-                                    cols[i].markdown(f'<div class="treatment-header">Session {treatment_num}</div>', unsafe_allow_html=True)
-                                
-                                # Create rows
-                                for field_key, field_label in fields:
-                                    cols = st.columns(len(current_treatments) + 1)
-                                    cols[0].markdown(f'<div class="field-label">{field_label}</div>', unsafe_allow_html=True)
-                                    for i, (treatment_num, data) in enumerate(current_treatments, 1):
-                                        value = data.get(field_key, 'N/A')
-                                        cols[i].markdown(f'<div class="field-value">{value}</div>', unsafe_allow_html=True)
-                        
-                        st.markdown('</div>', unsafe_allow_html=True)
+                    # PR Comparison Chart
+                    st.write("**Pulse Rate Analysis:**")
+                    st.plotly_chart(fig_pr_comparison, use_container_width=True)
+                    with st.spinner('Analyzing pulse rate trends...'):
+                        pr_analysis = analyze_pr_trends(sorted_results)
+                        st.write(pr_analysis)
+                    
+                    st.markdown("---")
+                    
+                    # Total Hypoxic Time Chart
+                    st.write("**Total Hypoxic Time Analysis:**")
+                    st.plotly_chart(fig_hypoxic_time, use_container_width=True)
+                    with st.spinner('Analyzing hypoxic time trends...'):
+                        hypoxic_analysis = analyze_hypoxic_time(sorted_results)
+                        st.write(hypoxic_analysis)
+                    
+                    st.markdown("---")
+                    
+                    # BP Comparison Chart
+                    st.write("**Blood Pressure Analysis:**")
+                    st.plotly_chart(fig_bp_comparison, use_container_width=True)
+                    with st.spinner('Analyzing BP trends...'):
+                        bp_analysis = analyze_bp_trends(sorted_results)
+                        st.write(bp_analysis)
                 else:
                     st.write("Upload multiple sessions to see progress charts")
+                
+                st.markdown("---")
+                
+                # Add the Detailed Treatment Overview section
+                st.markdown('<h2 class="detailed-overview-header">Detailed Treatment Overview</h2>', unsafe_allow_html=True)
+
+                if sorted_results:
+                    st.markdown('<div class="detailed-overview-content">', unsafe_allow_html=True)
+                    # Convert treatments to sorted list of tuples
+                    sorted_treatments = sorted(sorted_results.items())
+                    
+                    # Group treatments into sets of 5
+                    sessions_per_page = 5
+                    all_pages = []
+                    current_page = []
+                    
+                    for i, (treatment_num, data) in enumerate(sorted_treatments, 1):
+                        current_page.append((treatment_num, data))
+                        if i % sessions_per_page == 0 or i == len(sorted_treatments):
+                            all_pages.append(current_page)
+                            current_page = []
+                    
+                    # Add any remaining treatments to the last page
+                    if current_page:
+                        all_pages.append(current_page)
+                    
+                    # Create tabs for each group of 5
+                    tab_labels = [f"Sessions {i*5-4}-{min(i*5, len(sorted_treatments))}" 
+                                 for i in range(1, len(all_pages) + 1)]
+                    tabs = st.tabs(tab_labels)
+                    
+                    # Define fields to display
+                    fields = [
+                        ('treatment_date', 'Treatment Date'),
+                        ('total_duration', 'Total Duration'),
+                        ('total_hypoxic_time', 'Total Hypoxic Time'),
+                        ('number_of_hypoxic_phases', 'Number of Hypoxic Phases'),
+                        ('hypoxic_phase_duration_avg', 'Hypoxic Phase Duration Average'),
+                        ('min_spo2_average', 'Min SpO2 Average'),
+                        ('number_of_hyperoxic_phases', 'Number of Hyperoxic Phases'),
+                        ('hyperoxic_phase_duration_avg', 'Hyperoxic Phase Duration Average'),
+                        ('max_spo2_average', 'Max SpO2 Average'),
+                        ('baseline_pr', 'Baseline PR'),
+                        ('min_pr_average', 'Min PR Average'),
+                        ('max_pr_average', 'Max PR Average'),
+                        ('pr_after_procedure', 'PR After Procedure'),
+                        ('pr_elevation_bpm', 'PR Elevation (BPM)'),
+                        ('pr_elevation_percent', 'PR Elevation (%)'),
+                        ('bp_before_procedure', 'BP Before Procedure'),
+                        ('bp_after_procedure', 'BP After Procedure')
+                    ]
+                    
+                    # Add custom CSS for styling
+                    st.markdown("""
+                        <style>
+                            /* Style for the section header */
+                            .detailed-overview-header {
+                                font-size: 24px;
+                                color: #1E88E5;
+                                padding: 10px 0;
+                                border-bottom: 2px solid #1E88E5;
+                                margin-bottom: 20px;
+                            }
+                            
+                            /* Style for tab labels */
+                            .stTabs [data-baseweb="tab-list"] {
+                                gap: 8px;
+                            }
+                            
+                            .stTabs [data-baseweb="tab"] {
+                                background-color: #f0f2f6;
+                                border-radius: 4px;
+                                padding: 8px 16px;
+                                font-weight: 500;
+                            }
+                            
+                            .stTabs [aria-selected="true"] {
+                                background-color: #1E88E5;
+                                color: white;
+                            }
+                            
+                            /* Style for table headers and cells */
+                            .treatment-header {
+                                font-weight: bold;
+                                color: #1E88E5;
+                                font-size: 16px;
+                                padding: 8px 0;
+                                border-bottom: 1px solid #e0e0e0;
+                            }
+                            
+                            .field-label {
+                                font-weight: 500;
+                                color: #424242;
+                                background-color: #f5f5f5;
+                                padding: 6px;
+                                border-radius: 4px;
+                                margin: 2px 0;
+                            }
+                            
+                            .field-value {
+                                padding: 6px;
+                                border-radius: 4px;
+                                background-color: white;
+                                margin: 2px 0;
+                                border: 1px solid #e0e0e0;
+                            }
+                        </style>
+                    """, unsafe_allow_html=True)
+                    
+                    # Display content for each tab
+                    for tab_index, tab in enumerate(tabs):
+                        with tab:
+                            current_treatments = all_pages[tab_index]
+                            
+                            # Create columns for the table
+                            cols = st.columns(len(current_treatments) + 1)
+                            
+                            # Treatment number headers
+                            for i, (treatment_num, _) in enumerate(current_treatments, 1):
+                                cols[i].markdown(f'<div class="treatment-header">Session {treatment_num}</div>', unsafe_allow_html=True)
+                            
+                            # Create rows
+                            for field_key, field_label in fields:
+                                cols = st.columns(len(current_treatments) + 1)
+                                cols[0].markdown(f'<div class="field-label">{field_label}</div>', unsafe_allow_html=True)
+                                for i, (treatment_num, data) in enumerate(current_treatments, 1):
+                                    value = data.get(field_key, 'N/A')
+                                    cols[i].markdown(f'<div class="field-value">{value}</div>', unsafe_allow_html=True)
+                    
+                    st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.write("Upload multiple sessions to see progress charts")
 
 if __name__ == "__main__":
     main() 

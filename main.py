@@ -42,6 +42,10 @@ st.markdown("""
             background: rgb(255,255,255);
             background: radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,255,1) 89%, rgba(218,216,216,1) 100%);
         }
+        /* Hide "Select AI Model" section */
+        [data-testid="stSidebarSelectbox"] {
+            display: none;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -108,3 +112,6 @@ else:
         app.main()
     else:
         course_report.main() 
+
+# Replace the AI model selectbox with a hidden default
+ai_model = "Claude 3 Sonnet"  # Set default model 

@@ -1,0 +1,152 @@
+/* Print-specific styles */
+@media print {
+    /* Hide UI elements */
+    [data-testid="stSidebar"],
+    .stButton, 
+    .stDownloadButton,
+    .stFileUploader,
+    footer,
+    header {
+        display: none !important;
+    }
+
+    /* Hide sections we don't want to print */
+    #file-upload-section,
+    #treatment-selection {
+        display: none !important;
+    }
+
+    /* Layout for charts section */
+    #charts-section {
+        width: 100% !important;
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* Container for each chart and its analysis */
+    #phase-duration-container,
+    #pulse-rate-container,
+    #bp-container,
+    #hypoxic-time-container {
+        display: flex !important;
+        flex-direction: column !important;
+        width: 100% !important;
+        margin: 2cm 0 !important;
+        page-break-inside: avoid !important;
+    }
+
+    /* Chart styling */
+    #phase-duration-chart,
+    #pulse-rate-chart,
+    #bp-chart,
+    #hypoxic-time-chart {
+        width: 100% !important;
+        max-width: none !important;
+        order: 1 !important;
+    }
+
+    /* Analysis text styling */
+    #phase-analysis-text,
+    #pulse-analysis-text,
+    #bp-analysis-text,
+    #hypoxic-analysis-text {
+        width: 100% !important;
+        order: 2 !important;
+        margin-top: 1cm !important;
+    }
+
+    /* Reset page margins */
+    @page {
+        margin: 1cm !important;
+        size: auto !important;
+    }
+
+    /* Basic container resets */
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* Hide detailed treatment section */
+    .detailed-overview-header,
+    .detailed-overview-content,
+    div:has(> .detailed-overview-header),
+    div:has(> .detailed-overview-content),
+    div:has(> table),
+    .dataframe,
+    div:has(> .dataframe),
+    div:has(> [data-testid="stDataFrame"]),
+    [data-testid="stDataFrame"],
+    div[data-testid*="stHorizontalBlock"]:has(table) {
+        display: none !important;
+    }
+
+    /* Force column stacking */
+    div[data-testid="stHorizontalBlock"] {
+        display: block !important;
+    }
+
+    div[data-testid="column"] {
+        width: 100% !important;
+        display: block !important;
+        page-break-inside: avoid !important;
+    }
+
+    /* Chart styling */
+    .js-plotly-plot,
+    .plotly,
+    .plot-container {
+        width: 100% !important;
+        max-width: none !important;
+        page-break-inside: avoid !important;
+    }
+
+    /* Text content */
+    div[data-testid="stMarkdown"] {
+        width: 100% !important;
+        max-width: none !important;
+        page-break-inside: avoid !important;
+    }
+
+    /* Layout for charts and analysis */
+    #phase-duration-chart,
+    #pulse-rate-chart,
+    #bp-chart,
+    #hypoxic-time-chart {
+        width: 100% !important;
+        max-width: none !important;
+        margin: 2cm 0 !important;
+        page-break-inside: avoid !important;
+    }
+
+    #phase-analysis-text,
+    #pulse-analysis-text,
+    #bp-analysis-text,
+    #hypoxic-analysis-text {
+        width: 100% !important;
+        margin: 1cm 0 !important;
+        page-break-inside: avoid !important;
+    }
+
+    /* Force chart before text layout */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    div[data-testid="stHorizontalBlock"] > div:nth-child(2) {
+        order: 1 !important;
+    }
+
+    div[data-testid="stHorizontalBlock"] > div:nth-child(1) {
+        order: 2 !important;
+    }
+
+    /* Hide unwanted sections */
+    #detailed-overview,
+    #treatment-selection,
+    #file-upload-section {
+        display: none !important;
+    }
+} 
