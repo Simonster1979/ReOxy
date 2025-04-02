@@ -977,7 +977,17 @@ def main():
                     st.write("Upload multiple sessions to see progress charts")
                 
                 st.markdown("---")
-                create_pdf(session_analysis_content, content_to_export, "exported_reoxy_report.pdf")
+                pdf_path = "exported_report.pdf"
+                create_pdf(session_analysis_content, content_to_export, pdf_path)
+                with open(pdf_path, "rb") as file:
+                    pdf_bytes = file.read()
+
+                st.download_button(
+                    label="Download PDF",
+                    data=pdf_bytes,
+                    file_name=pdf_path,
+                    mime="application/pdf",
+                )
 
                 # Add the Detailed Treatment Overview section
                 st.markdown('<h2 class="detailed-overview-header">Detailed Treatment Overview</h2>', unsafe_allow_html=True)

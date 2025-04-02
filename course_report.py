@@ -665,8 +665,8 @@ def main():
                         case_history_analysis.heading = "Case History Analysis"
                         case_history_analysis.paragraph = history_analysis
                         content_to_write.append(case_history_analysis)
-                    else:
-                        content_to_write.append(None)
+                    # else:
+                    #     content_to_write.append(None)
                     
                     # Add a separator
                     st.markdown("---")
@@ -989,7 +989,17 @@ def main():
                         st.write("Upload multiple sessions to see progress charts")
                     
                     st.markdown("---")
-                    create_pdf(session_analysis_content,content_to_write,"exported_report.pdf")
+                    pdf_path = "exported_report.pdf"
+                    create_pdf(session_analysis_content,content_to_write,pdf_path)
+                    with open(pdf_path, "rb") as file:
+                        pdf_bytes = file.read()
+
+                    st.download_button(
+                        label="Download PDF",
+                        data=pdf_bytes,
+                        file_name= "exported_report.pdf",
+                        mime="application/pdf",
+                    )
                     # Now add the Detailed Treatment Overview section
                     # Add custom CSS for styling
                     st.markdown("""
