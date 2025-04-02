@@ -10,10 +10,10 @@ import plotly.graph_objects as go
 import plotly.express as px
 from anthropic import Anthropic
 import anthropic
-
+from export_pdf_utils import *
 # Load environment variables
 load_dotenv()
-
+content_to_export = []
 def extract_text_from_pdf(pdf_file):
     try:
         # Reset file pointer to the beginning
@@ -63,7 +63,7 @@ def extract_text_from_pdf(pdf_file):
             )
             
             word_list = [w['text'].strip() for w in words]
-            print(word_list)  # or st.write(word_list)
+            # print(word_list)  # or st.write(word_list)
 
             
             
@@ -190,7 +190,8 @@ def compare_sessions_openai(sorted_results):
         
         Sessions:{''.join(sessions_data)}
         
-        Highlight key improvements in physiological adaptation between sessions, including cardiovascular responses shown by both heart rate and blood pressure changes."""
+        Highlight key improvements in physiological adaptation between sessions, including cardiovascular responses shown by both heart rate and blood pressure changes.
+        Return the results in markdown format and make sure to properly create unordered list items."""
         
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -479,7 +480,7 @@ def create_charts(sorted_results):
 def analyze_hyperoxic_duration(sorted_results):
     try:
         client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        
+
         sessions_data = []
         for treatment_num, data in sorted_results.items():
             sessions_data.append(f"""
@@ -879,11 +880,19 @@ def main():
                 
                 # Display patient information in a single line separated by '|'
                 st.write(f"**Patient Name:** {first_patient['patient_name']} | **Date of Birth:** {first_patient['date_of_birth']} | **Sex:** {first_patient['sex']}")
-                
+                patient_details = AnalysisContent()
+                patient_details.heading = "Patient Information"
+                patient_details.paragraph = f"**Patient Name:** {first_patient['patient_name']} | **Date of Birth:** {first_patient['date_of_birth']} | **Sex:** {first_patient['sex']}"
+                content_to_export.append(patient_details)
                 # Add case history analysis if text was entered
                 if case_history.strip():
                     st.subheader("Case History Analysis")
                     history_analysis = analyze_case_history(case_history, sorted_results)
+
+                    case_history_analysis = AnalysisContent()
+                    case_history_analysis.heading = "Case History Analysis"
+                    case_history_analysis.paragraph = history_analysis
+                    content_to_export.append(case_history_analysis)
                     st.write(history_analysis)
                 
                 # Add a separator
@@ -893,6 +902,9 @@ def main():
                 st.subheader("Session Comparison")
                 if len(sorted_results) > 1:
                     comparison = compare_sessions_openai(sorted_results)
+                    session_analysis_content = AnalysisContent()
+                    session_analysis_content.sub_heading = "Session Comparison"
+                    session_analysis_content.paragraph = comparison
                     st.write(comparison)
                 else:
                     st.write("Upload multiple sessions to see comparison")
@@ -912,6 +924,12 @@ def main():
                     st.plotly_chart(fig_phases, use_container_width=True)
                     with st.spinner('Analyzing phase durations...'):
                         phase_analysis = analyze_hyperoxic_duration(sorted_results)
+                        analysis_content = AnalysisContent()
+                        analysis_content.heading = "Treatment Progress Charts"
+                        analysis_content.sub_heading = "Phase Duration Analysis"
+                        analysis_content.paragraph = phase_analysis
+                        analysis_content.figure = fig_phases
+                        content_to_export.append(analysis_content)
                         st.write(phase_analysis)
                     
                     st.markdown("---")
@@ -922,6 +940,11 @@ def main():
                     with st.spinner('Analyzing pulse rate trends...'):
                         pr_analysis = analyze_pr_trends(sorted_results)
                         st.write(pr_analysis)
+                        pulserate_analysis_content = AnalysisContent()
+                        pulserate_analysis_content.sub_heading = "Pulse Rate Analysis"
+                        pulserate_analysis_content.figure = fig_pr_comparison
+                        pulserate_analysis_content.paragraph = pr_analysis
+                        content_to_export.append(pulserate_analysis_content)
                     
                     st.markdown("---")
                     
@@ -931,6 +954,11 @@ def main():
                     with st.spinner('Analyzing hypoxic time trends...'):
                         hypoxic_analysis = analyze_hypoxic_time(sorted_results)
                         st.write(hypoxic_analysis)
+                        hypoxic_time_analysis_content = AnalysisContent()
+                        hypoxic_time_analysis_content.sub_heading = "Total Hypoxic Time Analysis:"
+                        hypoxic_time_analysis_content.figure = fig_hypoxic_time
+                        hypoxic_time_analysis_content.paragraph = hypoxic_analysis
+                        content_to_export.append(hypoxic_time_analysis_content)
                     
                     st.markdown("---")
                     
@@ -940,11 +968,17 @@ def main():
                     with st.spinner('Analyzing BP trends...'):
                         bp_analysis = analyze_bp_trends(sorted_results)
                         st.write(bp_analysis)
+                        bp_analysis_content = AnalysisContent()
+                        bp_analysis_content.sub_heading = "Blood Pressure Analysis:"
+                        bp_analysis_content.figure = fig_bp_comparison
+                        bp_analysis_content.paragraph = bp_analysis
+                        content_to_export.append(bp_analysis_content)
                 else:
                     st.write("Upload multiple sessions to see progress charts")
                 
                 st.markdown("---")
-                
+                create_pdf(session_analysis_content, content_to_export, "exported_reoxy_report.pdf")
+
                 # Add the Detailed Treatment Overview section
                 st.markdown('<h2 class="detailed-overview-header">Detailed Treatment Overview</h2>', unsafe_allow_html=True)
 

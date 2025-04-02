@@ -114,4 +114,4 @@ else:
         course_report.main() 
 
 # Replace the AI model selectbox with a hidden default
-ai_model = "Claude 3 Sonnet"  # Set default model 
+ai_model = "OpenAI GPT-3.5" #"Claude 3 Sonnet"  # Set default model

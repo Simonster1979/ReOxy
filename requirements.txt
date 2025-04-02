@@ -6,3 +6,8 @@ python-dotenv
 plotly
 anthropic
 fpdf
+reportlab
+markdown
+matplotlib
+bs4
+pillow

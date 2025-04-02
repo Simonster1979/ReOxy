@@ -1,9 +1,9 @@
 # all working now working on uploading and removing pdf errors and login
 import pdfplumber
-import io
 import streamlit as st
 import re
-from pathlib import Path
+
+
 import pandas as pd
 #from anthropic import Anthropic
 import os
@@ -11,8 +11,11 @@ from dotenv import load_dotenv
 import plotly.graph_objects as go
 from openai import OpenAI
 
+from export_pdf_utils import *
 # Load environment variables
 load_dotenv()
+content_to_write = []
+
 
 def extract_course_report(pdf_file):
     """
@@ -230,7 +233,8 @@ def analyze_case_history(case_history, analysis_data):
             - BP After: {data.get('BP SYS after (mmHg)', 'N/A')}/{data.get('BP DIA after (mmHg)', 'N/A')}
             """)
         
-        prompt = f"""Based on the patient's case history and ReOxy treatment results, identify key correlations and relevant clinical insights in 2-3 sentences.
+        prompt = f"""Based on the patient's case history and ReOxy treatment results, identify key correlations and relevant clinical insights in 2-3 sentences. 
+       .
 
         Case History:
         {case_history}
@@ -390,7 +394,8 @@ def compare_sessions_openai(analysis_data):
         
         Treatment Data:{''.join(sessions_data)}
         
-        Provide a concise analysis highlighting key trends, improvements, or areas of note between sessions."""
+        Provide a concise analysis highlighting key trends, improvements, or areas of note between sessions. 
+       """
         
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -402,7 +407,7 @@ def compare_sessions_openai(analysis_data):
 
 def main():
     # Replace the AI model selectbox with a hidden default
-    ai_model = "Claude 3 Sonnet"  # Set default model
+    ai_model = "OpenAI GPT-3.5"  # Set default model
     
     st.title("Course Report PDF Extractor")
     
@@ -630,6 +635,9 @@ def main():
             # Show analysis only if button was clicked and using the analyzed treatments
             if st.session_state.show_analysis and st.session_state.analyzed_treatments:
                 st.markdown("---")
+                # Variable to save plotly figures
+                all_figures = []
+
                 with st.spinner('Processing selected treatments...'):
                     # Filter course_data to only include analyzed treatments
                     filtered_treatments = {k: v for k, v in st.session_state.course_data['treatments'].items() 
@@ -640,7 +648,11 @@ def main():
                     # Display patient information first
                     st.markdown("<div class='myUniqueId'><h2>Patient Information</h2></div>", unsafe_allow_html=True)
                     st.write(f"**Patient Name:** {analysis_data['patient_name']} | **Date of Birth:** {analysis_data['dob']} | **Sex:** {analysis_data['sex']}")
-                    
+                    patient_details = AnalysisContent()
+                    patient_details.heading = "Patient Information"
+                    patient_details.paragraph =f"**Patient Name:** {analysis_data['patient_name']} | **Date of Birth:** {analysis_data['dob']} | **Sex:** {analysis_data['sex']}"
+                    content_to_write.append(patient_details)
+
                     # Add case history analysis if text was entered
                     if case_history.strip():
                         st.markdown('<div class="case-history-section">', unsafe_allow_html=True)
@@ -649,6 +661,12 @@ def main():
                             history_analysis = analyze_case_history(case_history, analysis_data)
                             st.write(history_analysis)
                         st.markdown('</div>', unsafe_allow_html=True)
+                        case_history_analysis = AnalysisContent()
+                        case_history_analysis.heading = "Case History Analysis"
+                        case_history_analysis.paragraph = history_analysis
+                        content_to_write.append(case_history_analysis)
+                    else:
+                        content_to_write.append(None)
                     
                     # Add a separator
                     st.markdown("---")
@@ -659,9 +677,15 @@ def main():
                         with st.spinner('Analyzing treatment sessions...'):
                             comparison = compare_sessions_openai(analysis_data)
                             st.write(comparison)
+                            comparison = comparison
+
+                            session_analysis_content = AnalysisContent()
+                            session_analysis_content.sub_heading = "Session Comparison"
+                            session_analysis_content.paragraph = comparison
+
                     else:
                         st.write("Upload multiple sessions to see comparison")
-                    
+
                     # Add a separator
                     st.markdown("---")
                     
@@ -680,7 +704,6 @@ def main():
                     # Add Treatment Progress Charts section
 
                     st.subheader("Treatment Progress Charts")
-                    
                     if len(analysis_data['treatments']) > 1:  # Only show charts for multiple sessions
                         # Create data for the phase duration chart
                         treatment_nums = []
@@ -707,19 +730,27 @@ def main():
                         
                         # Create phase duration chart
                         fig = go.Figure()
-                        
+                        analysis_content = AnalysisContent()
+                        analysis_content.heading = "Treatment Progress Charts"
+                        analysis_content.sub_heading = "Phase Duration Analysis"
                         fig.add_trace(go.Scatter(
                             x=treatment_nums,
                             y=hyperoxic_durations,
                             name='Hyperoxic Phase',
-                            mode='lines+markers'
+                            mode='lines+markers',
+                            # line=dict(color='rgb(0, 122, 204)', width=2),  # Blue color
+                            # marker=dict(color='rgb(0, 122, 204)', size=8)
+
                         ))
                         
                         fig.add_trace(go.Scatter(
                             x=treatment_nums,
                             y=hypoxic_durations,
                             name='Hypoxic Phase',
-                            mode='lines+markers'
+                            mode='lines+markers',
+                            # line=dict(color='rgb(255, 127, 14)', width=2),  # Orange color
+                            # marker=dict(color='rgb(255, 127, 14)', size=8)
+
                         ))
                         
                         fig.update_layout(
@@ -735,12 +766,16 @@ def main():
                                 font=dict(size=12)
                             ),
                             margin=dict(t=50, l=50, r=100, b=50),
-                            height=500
+                            height=500,
+                            template='plotly'
                         )
-                        
+
+                        all_figures.append(fig)
                         st.plotly_chart(fig, use_container_width=True)
                         st.write(phase_analysis)
-                        
+                        analysis_content.paragraph = phase_analysis
+                        analysis_content.figure = fig
+                        content_to_write.append(analysis_content)
                         st.markdown("---")
                         
                         # Create data for the pulse rate chart
@@ -755,7 +790,8 @@ def main():
                             # Process max PR average
                             max_pr_str = data.get('Max PR Av. (bpm)', '0')
                             max_pr_avg.append(float(max_pr_str.split()[0]))
-                        
+
+
                         # Create pulse rate chart
                         st.write("**Pulse Rate Analysis:**")
                         with st.spinner('Analyzing pulse rate trends...'):
@@ -763,6 +799,7 @@ def main():
                         
                         # Create pulse rate chart
                         fig_pr = go.Figure()
+
                         
                         fig_pr.add_trace(go.Scatter(
                             x=treatment_nums,
@@ -791,9 +828,16 @@ def main():
                                 font=dict(size=12)
                             ),
                             margin=dict(t=50, l=50, r=100, b=50),
-                            height=500
+                            height=500,
+                            template='plotly'
+
                         )
-                        
+                        all_figures.append(fig_pr)
+                        pulserate_analysis_content = AnalysisContent()
+                        pulserate_analysis_content.sub_heading = "Pulse Rate Analysis"
+                        pulserate_analysis_content.figure = fig_pr
+                        pulserate_analysis_content.paragraph = pr_analysis
+                        content_to_write.append(pulserate_analysis_content)
                         st.plotly_chart(fig_pr, use_container_width=True)
                         st.write(pr_analysis)
                         
@@ -845,12 +889,20 @@ def main():
                                 font=dict(size=12)
                             ),
                             margin=dict(t=50, l=50, r=100, b=50),
-                            height=500
+                            height=500,
+                            template='plotly'
+
                         )
-                        
+                        all_figures.append(fig_hypoxic)
+
                         st.plotly_chart(fig_hypoxic, use_container_width=True)
                         st.write(hypoxic_time_analysis)
-                        
+
+                        hypoxic_time_analysis_content = AnalysisContent()
+                        hypoxic_time_analysis_content.sub_heading = "Total Hypoxic Time Analysis:"
+                        hypoxic_time_analysis_content.figure = fig_hypoxic
+                        hypoxic_time_analysis_content.paragraph = hypoxic_time_analysis
+                        content_to_write.append(hypoxic_time_analysis_content)
                         st.markdown("---")
                         
                         # Create data for blood pressure chart
@@ -920,16 +972,24 @@ def main():
                                 font=dict(size=12)
                             ),
                             margin=dict(t=50, l=50, r=100, b=50),
-                            height=500
+                            height=500,
+                            template='plotly'
+
                         )
-                        
+                        all_figures.append(fig_bp_comparison)
                         st.plotly_chart(fig_bp_comparison, use_container_width=True)
                         st.write(bp_analysis)
+                        bp_analysis_content = AnalysisContent()
+                        bp_analysis_content.sub_heading = "Blood Pressure Analysis:"
+                        bp_analysis_content.figure = fig_bp_comparison
+                        bp_analysis_content.paragraph = bp_analysis
+                        content_to_write.append(bp_analysis_content)
+
                     else:
                         st.write("Upload multiple sessions to see progress charts")
                     
                     st.markdown("---")
-                    
+                    create_pdf(session_analysis_content,content_to_write,"exported_report.pdf")
                     # Now add the Detailed Treatment Overview section
                     # Add custom CSS for styling
                     st.markdown("""
