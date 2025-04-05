@@ -56,7 +56,7 @@ def extract_text_from_pdf(pdf_file):
         
         for page in pdf.pages:
             words = page.extract_words(
-                x_tolerance=3,
+                x_tolerance=5,
                 y_tolerance=3,
                 keep_blank_chars=True,
                 use_text_flow=True
