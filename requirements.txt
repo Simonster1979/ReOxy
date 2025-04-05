@@ -11,3 +11,4 @@ markdown
 matplotlib
 bs4
 pillow
+kaleido
