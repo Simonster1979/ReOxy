@@ -63,7 +63,8 @@ def extract_text_from_pdf(pdf_file):
             )
             
             word_list = [w['text'].strip() for w in words]
-
+            modfied_word_list = [w!='2' for w in word_list ]
+            word_list = modfied_word_list
             print("<----------- --------- ------------- ----------->")
             print(word_list)  # or st.write(word_list)
             print("<---------------------->")
