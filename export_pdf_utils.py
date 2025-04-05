@@ -158,7 +158,6 @@ def create_pdf(session_analysis,content_to_write, output_filename):
     soup = BeautifulSoup(html_content, 'html.parser')
     # Create PDF document
     # Create styles
-    print(html_content)
     styles = create_markdown_styles()
     # Process HTML elements
 
