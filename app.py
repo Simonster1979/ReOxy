@@ -63,8 +63,10 @@ def extract_text_from_pdf(pdf_file):
             )
             
             word_list = [w['text'].strip() for w in words]
-            # print(word_list)  # or st.write(word_list)
 
+            print("<----------- --------- ------------- ----------->")
+            print(word_list)  # or st.write(word_list)
+            print("<---------------------->")
             
             
             # Process Results section
@@ -305,8 +307,8 @@ def create_charts(sorted_results):
     for data in sorted_results.values():
         # Calculate average of Min and Max PR
         print(data)
-        data["max_pr_average"].replace("Baseline", "0")
-        data["min_pr_average"].replace("Baseline", "0")
+        data["max_pr_average"].replace("Baseline Pr", "0")
+        data["min_pr_average"].replace("Baseline Pr", "0")
         min_pr = float(data['min_pr_average'].split(' ')[0])
         max_pr = float(data['max_pr_average'].split(' ')[0])
         pr_avg = (min_pr + max_pr) / 2
