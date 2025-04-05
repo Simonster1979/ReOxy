@@ -17,6 +17,7 @@ def save_plots_in_PDF(figures):
     with PdfPages(pdf_filename) as pdf:
         for fig in figures:
             fig.update_layout(width=1000, height=800)
+            fig.update_layout(template="plotly_white")  # or "plotly"
             # Convert Plotly figure to image
             img_bytes = pio.to_image(fig, format="jpg")
             img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
@@ -188,18 +189,23 @@ def create_pdf(session_analysis,content_to_write, output_filename):
     # ---------------------------------------------------------------
     # Start adding charts info
     # response = content_to_write[0]
+    c = 0
     for response in content_to_write[1:]:
         flowable.append(Paragraph(response.heading, heading_style))
         # Add sub Heading
         flowable.append(Paragraph(response.sub_heading, sub_heading_style))
         fig = response.figure
         if fig is not None:
+            c = c + 1
+            print(c)
             fig.update_layout(width=1000, height=600)
-            img_bytes = pio.to_image(fig, format="jpg")
+            fig.update_layout(template="plotly_white")  # or "plotly"
+
+            img_bytes = pio.to_image(fig, format="png")
             img = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
-            img.save("temp.png")
+            img.save(f"temp_{c}.png")
             # Convert Plotly figure to image
-            image_path = "temp.png"  # Change this to your image path
+            image_path = f"temp_{c}.png"  # Change this to your image path
             pil_image = PILImage.open(image_path)
             image_width, image_height = pil_image.size
             # Resize Image (if necessary)

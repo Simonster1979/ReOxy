@@ -13,7 +13,6 @@ import anthropic
 from export_pdf_utils import *
 # Load environment variables
 load_dotenv()
-content_to_export = []
 def extract_text_from_pdf(pdf_file):
     try:
         # Reset file pointer to the beginning
@@ -64,10 +63,6 @@ def extract_text_from_pdf(pdf_file):
             
             word_list = [w['text'].strip() for w in words]
             word_list = [word for word in word_list if word != '2']
-
-            print("<----------- --------- ------------- ----------->")
-            print(word_list)  # or st.write(word_list)
-            print("<---------------------->")
             
             
             # Process Results section
@@ -307,7 +302,6 @@ def create_charts(sorted_results):
     
     for data in sorted_results.values():
         # Calculate average of Min and Max PR
-        print(data)
         data["max_pr_average"].replace("Baseline Pr", "0")
         data["min_pr_average"].replace("Baseline Pr", "0")
         min_pr = float(data['min_pr_average'].split(' ')[0])
@@ -862,7 +856,8 @@ def main():
             # Process uploaded files and extract data
             all_results = {}
             first_patient = None
-            
+            content_to_export = []
+
             for uploaded_file in st.session_state.uploaded_files:
                 try:
                     formatted_text, patient_data = extract_text_from_pdf(uploaded_file)
@@ -984,6 +979,7 @@ def main():
                 
                 st.markdown("---")
                 pdf_path = "exported_report.pdf"
+                print(content_to_export)
                 create_pdf(session_analysis_content, content_to_export, pdf_path)
                 with open(pdf_path, "rb") as file:
                     pdf_bytes = file.read()
@@ -994,6 +990,7 @@ def main():
                     file_name=pdf_path,
                     mime="application/pdf",
                 )
+                content_to_export.clear()
 
                 # Add the Detailed Treatment Overview section
                 st.markdown('<h2 class="detailed-overview-header">Detailed Treatment Overview</h2>', unsafe_allow_html=True)
