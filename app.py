@@ -56,13 +56,13 @@ def extract_text_from_pdf(pdf_file):
         
         for page in pdf.pages:
             words = page.extract_words(
-                x_tolerance=6,
-                y_tolerance=2,
+                x_tolerance=3,
+                y_tolerance=3,
                 keep_blank_chars=True,
                 use_text_flow=True
             )
             
-            # word_list = [w['text'].strip() for w in words]
+            word_list = [w['text'].strip() for w in words]
             word_list = [word for word in word_list if word != '2']
 
             print("<----------- --------- ------------- ----------->")
